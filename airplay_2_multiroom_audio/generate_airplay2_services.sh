@@ -46,6 +46,16 @@ fi
 export AIRPLAY_INTERFACE
 echo "Using AirPlay interface '${AIRPLAY_INTERFACE}'" >> "$log_file"
 
+if ! configured_airplay_name="$(python3 /usr/sbin/airplay_name.py auto 2>>"$log_file")"; then
+    echo "AirPlay receiver name selection failed; correct airplay_name in the add-on options and restart" >> "$log_file"
+    exit 1
+fi
+if [[ "$configured_airplay_name" == "auto" ]]; then
+    echo "Using each receiver's automatic name" >> "$log_file"
+else
+    echo "Using configured AirPlay receiver name '${configured_airplay_name}' for all receivers" >> "$log_file"
+fi
+
 # --- Bounce master sinks & recreate remap sinks before generating zone services ----------------
 # HDMI (and some other ALSA-card) sinks don't resume cleanly on their own
 # after the receiver is power-cycled or the cable is unplugged/replugged:
@@ -435,6 +445,12 @@ while read -r sink; do
     UDP_PORT_BASE=$((UDP_PORT_BASE + 10))
     current_sink=$sink
     current_name="${friendly_name//_/ }"
+    if ! receiver_name="$(python3 /usr/sbin/airplay_name.py "$current_name" 2>>"$log_file")"; then
+        echo "AirPlay receiver name selection failed for ${friendly_name}; correct airplay_name and restart" >> "$log_file"
+        exit 1
+    fi
+    quoted_receiver_name="$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "$receiver_name")"
+    shell_receiver_name="$(printf '%q' "$receiver_name")"
     current_log=$player_log
     current_udp_base=$UDP_PORT_BASE
 
@@ -457,11 +473,15 @@ EOF
         echo "AirPlay zone ${friendly_name}: ${custom_file} sets interface, which conflicts with the selected AirPlay interface; remove the interface setting" >> "$log_file"
         exit 1
     fi
+    if grep -Eq '^[[:space:]]*name[[:space:]]*=' "${custom_file}"; then
+        echo "AirPlay zone ${friendly_name}: ${custom_file} sets name, which conflicts with airplay_name; remove the name setting" >> "$log_file"
+        exit 1
+    fi
 
     cat > "${config_file}" <<EOF
 general :
 {
-  name = "${current_name}";
+  name = ${quoted_receiver_name};
   port = ${current_port};
   interface = "${AIRPLAY_INTERFACE}";
   output_backend = "pulseaudio";
@@ -488,9 +508,9 @@ EOF
     cat > "${service_dir}/run" <<EOF
 #!/usr/bin/with-contenv bashio
 truncate -s 0 "${current_log}"
-echo "\$(date) - Starting AirPlay 2 receiver: ${current_name} for ${current_sink} on port ${current_port}" >> "${current_log}"
+echo "\$(date) - Starting AirPlay 2 receiver for ${current_sink} on port ${current_port}" >> "${current_log}"
 exec shairport-sync \
-    -a "${current_name}" \
+    -a ${shell_receiver_name} \
     -p ${current_port} \
     -c "${config_file}" \
     -vv \

@@ -1,4 +1,10 @@
 configuration:
+  airplay_name:
+    name: AirPlay receiver name
+    description: >-
+      Name advertised in Apple's AirPlay picker. Leave as auto to keep each
+      receiver's current name, or enter a name up to 50 characters and 63 UTF-8
+      bytes. Include {name} to keep each zone's current name in a custom template.
   airplay_interface:
     name: AirPlay network interface
     description: >-

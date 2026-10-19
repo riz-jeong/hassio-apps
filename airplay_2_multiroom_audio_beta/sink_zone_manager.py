@@ -59,6 +59,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from airplay_name import configured_name
 
 log = logging.getLogger("sink_zone_manager")
 
@@ -327,7 +328,7 @@ class Zone:
         # its alias instead and names the real sink in `pa_sink`.
         self.sink = sink
         self.pa_sink = pa_sink or sink
-        self.display_name = display_name or sink.replace("_", " ")
+        self.display_name = configured_name(display_name or sink.replace("_", " "))
         self.rtsp_port = rtsp_port
         self.udp_base = udp_base
         self.config_file = CONFIG_DIR / f"{sink}-ap2.conf"
@@ -352,17 +353,21 @@ class Zone:
             log.info("Created %s", self.custom_file)
 
     def _write_config(self):
-        if re.search(r"(?m)^\s*interface\s*=", self.custom_file.read_text()):
+        custom_config = self.custom_file.read_text()
+        if re.search(r"(?m)^\s*interface\s*=", custom_config):
             raise ValueError(
                 f"{self.custom_file} sets interface, which conflicts with the selected "
                 "AirPlay interface; remove the interface setting"
             )
-        # Escape for a libconfig string (an alias may contain " or \).
-        name = self.display_name.replace("\\", "\\\\").replace('"', '\\"')
+        if re.search(r"(?m)^\s*name\s*=", custom_config):
+            raise ValueError(
+                f"{self.custom_file} sets name, which conflicts with airplay_name; "
+                "remove the name setting"
+            )
         self.config_file.write_text(f"""\
 general :
 {{
-  name = "{name}";
+  name = {json.dumps(self.display_name, ensure_ascii=False)};
   port = {self.rtsp_port};
   interface = "{AIRPLAY_INTERFACE}";
   output_backend = "pulseaudio";

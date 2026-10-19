@@ -57,6 +57,7 @@ from pathlib import Path
 
 import pychromecast
 import zeroconf as zeroconf_lib
+from airplay_name import configured_name
 
 log = logging.getLogger("cast_bridge_manager")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [castbridge-manager] %(levelname)s %(message)s")
@@ -257,11 +258,12 @@ def start_shairport(name: str, fifo: str, port: int, udp_port_base: int) -> subp
     config_file = CONFIG_DIR / f"{name}-ap2.conf"
     log_file = LOG_DIR / f"{name}-ap2.log"
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    receiver_name = configured_name(name)
 
     config_file.write_text(f"""\
 general :
 {{
-  name = "{name}";
+  name = {json.dumps(receiver_name, ensure_ascii=False)};
   port = {port};
   interface = "{AIRPLAY_INTERFACE}";
   output_backend = "pipe";
@@ -288,10 +290,10 @@ pipe :
 }};
 """)
 
-    log.info("Starting shairport-sync for '%s' on port %d -> %s", name, port, fifo)
+    log.info("Starting shairport-sync for '%s' on port %d -> %s", receiver_name, port, fifo)
     log_fh = open(log_file, "ab")
     return subprocess.Popen(
-        ["shairport-sync", "-a", name, "-p", str(port), "-c", str(config_file), "-vv"],
+        ["shairport-sync", "-a", receiver_name, "-p", str(port), "-c", str(config_file), "-vv"],
         stdout=log_fh, stderr=subprocess.STDOUT,
     )
 

@@ -50,6 +50,16 @@ fi
 export AIRPLAY_INTERFACE
 echo "Using AirPlay interface '${AIRPLAY_INTERFACE}'" >> "$log_file"
 
+if ! configured_airplay_name="$(python3 /usr/sbin/airplay_name.py auto 2>>"$log_file")"; then
+    echo "AirPlay receiver name selection failed; correct airplay_name in the add-on options and restart" >> "$log_file"
+    exit 1
+fi
+if [[ "$configured_airplay_name" == "auto" ]]; then
+    echo "Using each receiver's automatic name" >> "$log_file"
+else
+    echo "Using configured AirPlay receiver name '${configured_airplay_name}' for all receivers" >> "$log_file"
+fi
+
 # --- Bounce master sinks & recreate remap sinks before generating zone services ----------------
 # HDMI (and some other ALSA-card) sinks don't resume cleanly on their own
 # after the receiver is power-cycled or the cable is unplugged/replugged:

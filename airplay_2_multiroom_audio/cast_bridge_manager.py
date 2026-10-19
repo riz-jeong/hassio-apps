@@ -76,7 +76,7 @@ HTTP_PORT_MAP_FILE = CASTBRIDGE_DIR / "http_port_map.txt"
 # actually part of the config-mismatch problem.
 PIPE_DIR = Path("/media/music/castbridge")
 
-AIRPLAY_INTERFACE = os.environ.get("AIRPLAY_INTERFACE", "enp5s0")
+AIRPLAY_INTERFACE = os.environ.get("AIRPLAY_INTERFACE", "")
 DISCOVERY_TIMEOUT_SECONDS = int(os.environ.get("CAST_DISCOVERY_TIMEOUT", "10"))
 
 # How long to listen for existing _airplay._tcp mDNS advertisers before
@@ -307,6 +307,8 @@ def start_bridge_worker(zone: dict) -> subprocess.Popen:
 
 
 def main():
+    if not AIRPLAY_INTERFACE:
+        raise SystemExit("AIRPLAY_INTERFACE was not resolved by add-on startup; restart the add-on")
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CASTBRIDGE_DIR.mkdir(parents=True, exist_ok=True)
     PIPE_DIR.mkdir(parents=True, exist_ok=True)

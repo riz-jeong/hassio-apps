@@ -1,0 +1,7 @@
+configuration:
+  airplay_interface:
+    name: AirPlay network interface
+    description: >-
+      Interface used for AirPlay and mDNS discovery. Leave as auto to use the
+      interface with the best eligible default route, or enter an interface
+      name such as eth0. The interface must be up and have a LAN address.

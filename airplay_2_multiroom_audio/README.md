@@ -18,6 +18,12 @@ This addon merges what used to be two separate things — AirPlay 2 receivers fo
 - `host_network: true` — this addon needs real access to your LAN for AirPlay 2 (mDNS/Bonjour) and Cast device discovery to work.
 - Google Cast devices must be on the same network/VLAN as the Home Assistant host; discovery relies on mDNS, which typically doesn't cross VLANs without an mDNS reflector.
 
+## Network interface
+
+The `airplay_interface` add-on option defaults to `auto`. On startup the add-on chooses the eligible IPv4 default-route interface with the lowest metric, falling back to IPv6 when no eligible IPv4 default route exists. It then uses that same interface for Avahi/mDNS and every Shairport Sync receiver. Multiple active interfaces are normal; equal-priority default routes on different eligible interfaces are reported as ambiguous and require a manual choice. Loopback, common container interfaces, and tunnel/VPN interfaces are excluded.
+
+To select an interface manually, set `airplay_interface` to its Linux interface name, for example `eth0` or `enp3s0`, then restart the add-on. The interface must exist in the add-on's host network namespace, be up, and have a LAN address. Startup logs and `/config/shairport-sync/logs/generate_airplay2_services.log` report the selected interface and whether it was automatic or manual. If selection fails, choose a suitable interface or correct the host's default route before restarting. Per-zone `.custom` files must not define `interface`; startup reports a clear error if one does because the add-on writes that setting itself.
+
 ## Setting up a new zone
 
 **Sink-backed zones (local sound cards, USB DACs, HDMI, Bluetooth speakers, etc.):** this addon only creates an AirPlay 2 zone for a PulseAudio sink that's a `module-remap-sink` — and it names the zone after that remap sink's own name, so the remap sink's name *is* what shows up in your AirPlay picker. A raw hardware sink on its own (even a plain stereo card with nothing multi-channel about it) won't be picked up until it has a remap sink built on top of it — this applies even when the remap sink would just be a 1:1, all-channels passthrough of the card. A Bluetooth speaker works the same way once it's paired and PulseAudio shows it as a sink; see **Using a Bluetooth speaker as a zone** under **Advanced**.

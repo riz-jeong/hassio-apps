@@ -81,7 +81,7 @@ HTTP_PORT_MAP_FILE = CASTBRIDGE_DIR / "http_port_map.txt"
 # actually part of the config-mismatch problem.
 PIPE_DIR = Path("/media/music/castbridge")
 
-AIRPLAY_INTERFACE = os.environ.get("AIRPLAY_INTERFACE", "enp5s0")
+AIRPLAY_INTERFACE = os.environ.get("AIRPLAY_INTERFACE", "")
 
 # shairport-sync's own verbosity (-v / -vv / -vvv), from the add-on's
 # "log_level" option. Falls back to -vv, which is what it always used.
@@ -344,6 +344,8 @@ def start_bridge_worker(zone: dict) -> subprocess.Popen:
 
 
 def main():
+    if not AIRPLAY_INTERFACE:
+        raise SystemExit("AIRPLAY_INTERFACE was not resolved by add-on startup; restart the add-on")
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CASTBRIDGE_DIR.mkdir(parents=True, exist_ok=True)
     PIPE_DIR.mkdir(parents=True, exist_ok=True)

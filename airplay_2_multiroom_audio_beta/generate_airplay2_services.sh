@@ -41,10 +41,14 @@ CONTENTS_DIR="${BASE_DIR}/user/contents.d"
 CONFIG_DIR="/config/shairport-sync/config"
 mkdir -p "${CONTENTS_DIR}" "${CONFIG_DIR}"
 
-# Needed early (before the avahi service block below) so avahi-daemon can
-# be restricted to this interface at startup — see the airplay2-avahi
-# service comment for why that restriction matters.
-AIRPLAY_INTERFACE="${AIRPLAY_INTERFACE:-enp5s0}"
+# Resolve once in this container's network namespace and reuse the value
+# for Avahi, generated Shairport Sync configs, and long-running managers.
+if ! AIRPLAY_INTERFACE="$(python3 /usr/sbin/network_interface.py 2>>"$log_file")"; then
+    echo "AirPlay interface selection failed; correct airplay_interface in the add-on options and restart" >> "$log_file"
+    exit 1
+fi
+export AIRPLAY_INTERFACE
+echo "Using AirPlay interface '${AIRPLAY_INTERFACE}'" >> "$log_file"
 
 # --- Bounce master sinks & recreate remap sinks before generating zone services ----------------
 # HDMI (and some other ALSA-card) sinks don't resume cleanly on their own
@@ -259,7 +263,9 @@ if [ ! -d "$AVAHI_SERVICE" ]; then
     mkdir -p "$AVAHI_SERVICE" "${AVAHI_SERVICE}/dependencies.d"
     echo "longrun" > "${AVAHI_SERVICE}/type"
     touch "${AVAHI_SERVICE}/dependencies.d/airplay2-dbus"
-    cat > "${AVAHI_SERVICE}/run" <<EOF
+    touch "${CONTENTS_DIR}/airplay2-avahi"
+fi
+cat > "${AVAHI_SERVICE}/run" <<EOF
 #!/usr/bin/with-contenv bashio
 # Deliberately no -D: that flag daemonizes/forks, which s6 (expecting a
 # foreground process) interprets as an immediate crash-and-restart, while
@@ -295,9 +301,7 @@ awk -v iface="${AIRPLAY_INTERFACE}" '
     mv /tmp/avahi-daemon.conf.new /etc/avahi/avahi-daemon.conf
 exec avahi-daemon --no-drop-root --no-chroot -s
 EOF
-    chmod +x "${AVAHI_SERVICE}/run"
-    touch "${CONTENTS_DIR}/airplay2-avahi"
-fi
+chmod +x "${AVAHI_SERVICE}/run"
 
 NQPTP_SERVICE="${BASE_DIR}/airplay2-nqptp"
 if [ ! -d "$NQPTP_SERVICE" ]; then
@@ -329,14 +333,15 @@ if [ ! -d "$CASTBRIDGE_MANAGER_SERVICE" ]; then
     touch "${CASTBRIDGE_MANAGER_SERVICE}/dependencies.d/airplay2-dbus"
     touch "${CASTBRIDGE_MANAGER_SERVICE}/dependencies.d/airplay2-avahi"
     touch "${CASTBRIDGE_MANAGER_SERVICE}/dependencies.d/airplay2-nqptp"
-    cat > "${CASTBRIDGE_MANAGER_SERVICE}/run" <<'EOF'
+    touch "${CONTENTS_DIR}/airplay2-castbridge-manager"
+fi
+cat > "${CASTBRIDGE_MANAGER_SERVICE}/run" <<EOF
 #!/usr/bin/with-contenv bashio
+export AIRPLAY_INTERFACE="${AIRPLAY_INTERFACE}"
 mkdir -p /config/cast-bridge/logs
 exec python3 /usr/sbin/cast_bridge_manager.py >> /config/cast-bridge/logs/cast_bridge_manager.log 2>&1
 EOF
-    chmod +x "${CASTBRIDGE_MANAGER_SERVICE}/run"
-    touch "${CONTENTS_DIR}/airplay2-castbridge-manager"
-fi
+chmod +x "${CASTBRIDGE_MANAGER_SERVICE}/run"
 
 # One manager for every PulseAudio-sink zone (see the comment above).
 SINK_ZONE_MANAGER_SERVICE="${BASE_DIR}/airplay2-sink-zone-manager"
@@ -346,14 +351,13 @@ if [ ! -d "$SINK_ZONE_MANAGER_SERVICE" ]; then
     touch "${SINK_ZONE_MANAGER_SERVICE}/dependencies.d/airplay2-dbus"
     touch "${SINK_ZONE_MANAGER_SERVICE}/dependencies.d/airplay2-avahi"
     touch "${SINK_ZONE_MANAGER_SERVICE}/dependencies.d/airplay2-nqptp"
-    # Unquoted heredoc on purpose: AIRPLAY_INTERFACE is baked in here, the
-    # same way it was baked into each zone's generated config before.
-    cat > "${SINK_ZONE_MANAGER_SERVICE}/run" <<EOF
+    touch "${CONTENTS_DIR}/airplay2-sink-zone-manager"
+fi
+# Unquoted heredoc on purpose: AIRPLAY_INTERFACE is baked in here.
+cat > "${SINK_ZONE_MANAGER_SERVICE}/run" <<EOF
 #!/usr/bin/with-contenv bashio
 export AIRPLAY_INTERFACE="${AIRPLAY_INTERFACE}"
 mkdir -p /config/shairport-sync/logs
 exec python3 /usr/sbin/sink_zone_manager.py >> /config/shairport-sync/logs/sink_zone_manager.log 2>&1
 EOF
-    chmod +x "${SINK_ZONE_MANAGER_SERVICE}/run"
-    touch "${CONTENTS_DIR}/airplay2-sink-zone-manager"
-fi
+chmod +x "${SINK_ZONE_MANAGER_SERVICE}/run"

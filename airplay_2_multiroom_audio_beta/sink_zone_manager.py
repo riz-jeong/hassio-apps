@@ -67,7 +67,7 @@ LOG_DIR = Path(os.environ.get("SZM_LOG_DIR", "/config/shairport-sync/logs"))
 PORT_MAP_FILE = CONFIG_DIR / "port_map.txt"
 PORT_MAP_LOCK_FILE = CONFIG_DIR / ".port_map.lock"
 
-AIRPLAY_INTERFACE = os.environ.get("AIRPLAY_INTERFACE", "enp5s0")
+AIRPLAY_INTERFACE = os.environ.get("AIRPLAY_INTERFACE", "")
 
 # shairport-sync's own verbosity (-v / -vv / -vvv), from the add-on's
 # "log_level" option. Falls back to -vv, which is what it always used.
@@ -352,6 +352,11 @@ class Zone:
             log.info("Created %s", self.custom_file)
 
     def _write_config(self):
+        if re.search(r"(?m)^\s*interface\s*=", self.custom_file.read_text()):
+            raise ValueError(
+                f"{self.custom_file} sets interface, which conflicts with the selected "
+                "AirPlay interface; remove the interface setting"
+            )
         # Escape for a libconfig string (an alias may contain " or \).
         name = self.display_name.replace("\\", "\\\\").replace('"', '\\"')
         self.config_file.write_text(f"""\
@@ -439,7 +444,11 @@ pulseaudio :
             log.warning("shairport-sync for '%s' exited with code %s, restarting in %ds "
                         "(failure %d)", self.display_name, p.returncode, delay, self.failures)
         if now >= self.next_restart_at:
-            self.start(fresh=False)
+            try:
+                self.start(fresh=False)
+            except ValueError as exc:
+                log.error("Cannot restart AirPlay zone '%s': %s", self.display_name, exc)
+                self.next_restart_at = now + 60
 
 
 # -- the manager --------------------------------------------------------
@@ -471,7 +480,11 @@ class Manager:
             return
         pa_sink, display = self.bt_defs.get(sink, (None, None))
         zone = Zone(sink, assign_rtsp_port(sink), self._udp_base_for(sink), pa_sink, display)
-        zone.start(fresh=True)
+        try:
+            zone.start(fresh=True)
+        except ValueError as exc:
+            log.error("Skipping AirPlay zone '%s': %s", sink, exc)
+            return
         self.zones[sink] = zone
 
     def _desired(self, names):
@@ -615,6 +628,8 @@ class Manager:
 def main():
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s [sink-zones] %(levelname)s %(message)s")
+    if not AIRPLAY_INTERFACE:
+        raise SystemExit("AIRPLAY_INTERFACE was not resolved by add-on startup; restart the add-on")
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 

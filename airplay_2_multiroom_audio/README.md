@@ -32,6 +32,8 @@ The `airplay_name` add-on option controls the name advertised to Apple devices. 
 
 The `airplay_decoded_buffer_seconds` option defaults to `5` seconds (allowed range: `1`–`10`). It sets Shairport Sync's decoded-audio buffer capacity for buffered AirPlay 2 audio, which can help tolerate bursty senders. Larger values use more memory. This setting does not affect realtime AirPlay streams or Cast pipe-zone buffering. Restart the add-on after changing it. A per-zone `.custom` file can override it by setting `audio_decoded_buffer_desired_length_in_seconds`; when present, that custom value takes precedence for that zone.
 
+This add-on builds the upstream Shairport Sync `5.6` release with NQPTP `1.2.9`; both use Shared Memory Interface version `smi11`. Shairport Sync 5.6 includes fixes for OS 27 buffered audio handling and AirPlay 2 sessions interrupted by periodic connections from other players. The exact Shairport Sync and NQPTP build versions are written to `generate_airplay2_services.log` at startup.
+
 ## Setting up a new zone
 
 **Sink-backed zones (local sound cards, USB DACs, HDMI, Bluetooth speakers, etc.):** this addon only creates an AirPlay 2 zone for a PulseAudio sink that's a `module-remap-sink` — and it names the zone after that remap sink's own name, so the remap sink's name *is* what shows up in your AirPlay picker. A raw hardware sink on its own (even a plain stereo card with nothing multi-channel about it) won't be picked up until it has a remap sink built on top of it — this applies even when the remap sink would just be a 1:1, all-channels passthrough of the card. A Bluetooth speaker works the same way once it's paired and PulseAudio shows it as a sink; see **Using a Bluetooth speaker as a zone** under **Advanced**.

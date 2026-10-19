@@ -27,8 +27,8 @@ def load_manager(addon_name, module_name):
 
 class PlaybackReliabilityTests(unittest.TestCase):
     def test_both_addons_expose_the_same_bounded_buffer_option(self):
-        for addon, version in (("airplay_2_multiroom_audio", '"1.05"'),
-                               ("airplay_2_multiroom_audio_beta", '"0.13"')):
+        for addon, version in (("airplay_2_multiroom_audio", '"1.06"'),
+                               ("airplay_2_multiroom_audio_beta", '"0.14"')):
             with self.subTest(addon=addon):
                 schema = (ROOT / addon / "config.yaml").read_text()
                 translation = (ROOT / addon / "en.yaml").read_text()
@@ -38,6 +38,32 @@ class PlaybackReliabilityTests(unittest.TestCase):
                 self.assertIn("airplay_decoded_buffer_seconds: int(1,10)", schema)
                 self.assertIn("airplay_decoded_buffer_seconds:", translation)
                 self.assertIn("audio_decoded_buffer_desired_length_in_seconds", readme)
+                self.assertIn("Shairport Sync `5.6`", readme)
+                self.assertIn("NQPTP `1.2.9`", readme)
+
+    def test_addons_pin_compatible_latest_shairport_and_nqptp_releases(self):
+        dockerfiles = (
+            ROOT / "airplay_2_multiroom_audio" / "Dockerfile",
+            ROOT / "airplay_2_multiroom_audio_beta" / "Dockerfile",
+            ROOT / "airplay_2_multiroom_audio_beta" / "Dockerfile.txt",
+        )
+        for dockerfile in dockerfiles:
+            with self.subTest(dockerfile=dockerfile):
+                content = dockerfile.read_text()
+                self.assertIn("ARG SHAIRPORT_SYNC_VERSION=5.6", content)
+                self.assertIn("ARG NQPTP_VERSION=1.2.9", content)
+                self.assertIn('git checkout --detach "${NQPTP_VERSION}"', content)
+                self.assertIn('git checkout --detach "${SHAIRPORT_SYNC_VERSION}"', content)
+                self.assertIn("Shared Memory Interface Version: smi11.", content)
+                self.assertNotIn("git switch development", content)
+        self.assertEqual(dockerfiles[1].read_text(), dockerfiles[2].read_text())
+
+    def test_startup_logs_shairport_and_nqptp_build_versions(self):
+        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+            with self.subTest(addon=addon):
+                script = (ROOT / addon / "generate_airplay2_services.sh").read_text()
+                self.assertIn('shairport-sync -V', script)
+                self.assertIn('nqptp -V', script)
 
     def test_cast_pipe_buffer_remains_separate_from_sink_zone_buffer(self):
         for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):

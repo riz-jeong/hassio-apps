@@ -27,6 +27,12 @@ echo "$(date) — generate_airplay2_services.sh started" >> /tmp/airplay2_gen_de
 log_file="/config/shairport-sync/logs/generate_airplay2_services.log"
 mkdir -p "$(dirname "$log_file")"
 echo "# AirPlay 2 services generated on $(date)" > "$log_file"
+{
+    echo "Shairport Sync build:"
+    shairport-sync -V
+    echo "NQPTP build:"
+    nqptp -V
+} >> "$log_file" 2>&1
 
 # This script runs once per container start (S6_STAGE2_HOOK), before any
 # service does, so it is the place to start the long-running managers' logs

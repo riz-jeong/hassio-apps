@@ -1,16 +1,22 @@
+ARG NQPTP_VERSION=1.2.9
+ARG SHAIRPORT_SYNC_VERSION=5.6
+
 FROM ghcr.io/home-assistant/base:latest AS nqptp-builder
+ARG NQPTP_VERSION
 RUN apk add --no-cache build-base git autoconf automake libtool pkgconfig
 WORKDIR /tmp
 RUN git clone https://github.com/mikebrady/nqptp.git && \
     cd nqptp && \
-    git switch development && \
+    git checkout --detach "${NQPTP_VERSION}" && \
     sed -i 's|#include <linux/if_packet.h>|#include <netpacket/packet.h>|' nqptp-utilities.c && \
     autoreconf -fi && \
     CFLAGS="-DCONFIG_FOR_LINUX" ./configure && \
     make -j$(nproc) && \
-    make install DESTDIR=/tmp/nqptp-install
+    make install DESTDIR=/tmp/nqptp-install && \
+    /tmp/nqptp-install/usr/local/bin/nqptp -V | grep -F 'Shared Memory Interface Version: smi11.'
 
 FROM ghcr.io/home-assistant/base:latest AS alpine-builder
+ARG SHAIRPORT_SYNC_VERSION
 RUN apk add --no-cache \
     build-base git autoconf automake libtool pkgconfig \
     libconfig-dev popt-dev openssl-dev soxr-dev pulseaudio-dev \
@@ -19,7 +25,7 @@ RUN apk add --no-cache \
 WORKDIR /tmp
 RUN git clone https://github.com/mikebrady/shairport-sync.git shairport-sync-ap2 && \
     cd shairport-sync-ap2 && \
-    git switch development && \
+    git checkout --detach "${SHAIRPORT_SYNC_VERSION}" && \
     autoreconf -fi && \
     ./configure \
         --prefix=/usr \
@@ -33,7 +39,8 @@ RUN git clone https://github.com/mikebrady/shairport-sync.git shairport-sync-ap2
         CFLAGS="-DCONFIG_FOR_LINUX" && \
     make -j$(nproc) && \
     strip shairport-sync && \
-    make install DESTDIR=/tmp/shairport-ap2-install
+    make install DESTDIR=/tmp/shairport-ap2-install && \
+    /tmp/shairport-ap2-install/usr/bin/shairport-sync -V | grep -F 'smi11'
 
 FROM ghcr.io/home-assistant/base:latest AS base
 # python3/py3-pip/ffmpeg (the real binary, not just ffmpeg-libs) added

@@ -28,10 +28,6 @@ log_file="/config/shairport-sync/logs/generate_airplay2_services.log"
 mkdir -p "$(dirname "$log_file")"
 echo "# AirPlay 2 services generated on $(date)" > "$log_file"
 
-is_port_available() {
-    ss -tuln | grep -q ":$1 " && return 1 || return 0
-}
-
 BASE_DIR="/etc/s6-overlay/s6-rc.d"
 CONTENTS_DIR="${BASE_DIR}/user/contents.d"
 CONFIG_DIR="/config/shairport-sync/config"
@@ -229,70 +225,6 @@ while read -r remap_sink; do
     pactl load-module module-remap-sink $remap_args >> "$log_file" 2>&1
 done < <(pactl list sinks short | awk '/module-remap-sink/ {print $2}')
 
-# --- Persistent name -> port map ---------------------------------------
-# /etc/s6-overlay/s6-rc.d does NOT survive a container restart, so the
-# "service dir already exists, reuse its port" check below can never
-# actually fire on a fresh boot. Meanwhile shairport-sync derives each
-# zone's AirPlay 2 device ID from its instance name AND (per upstream
-# PR #2286) its RTSP port when instances share an address. That means
-# any time PORT_BASE's assignment depends on pactl's sink iteration
-# order (which is not guaranteed stable — remap sinks are created
-# dynamically by a separate addon), a zone's device ID can change
-# across a restart, which Music Assistant sees as a brand-new player
-# with default settings ("Streaming mode" resets to Automatic) plus an
-# orphaned leftover entry for the old ID.
-#
-# Fix: persist the name -> port assignment to /config (this addon's
-# persistent per-addon storage, kept across restarts) and reuse it
-# forever, only falling forward to a new port for a given name if its
-# previously-recorded port is actually taken by something else at
-# generation time. This same file is also shared with
-# cast_bridge_manager.py's Cast Bridge zones below.
-#
-# That reuse check used to be is_port_available() alone -- whether the
-# OS currently has something bound to that port -- which only catches a
-# collision with an unrelated process, not with ANOTHER zone's own
-# persisted entry. At generation time every shairport-sync process is
-# typically down (mid-restart), so is_port_available() sees every port
-# as free regardless of what port_map.txt itself already says, and a
-# genuinely new zone's port scan can land squarely on a port some other
-# zone's own line already claims -- exactly the silent collision found
-# in production between "HD_Audio_Generic_Digital_Surround_7_1_HDMI_2_
-# rl_rr" and "Yamaha_TV", both persisted at port 5120: whichever zone's
-# shairport-sync actually starts first wins that port, and the other
-# fails to bind it and never comes up, with nothing in this script's own
-# log to say so. port_claimed_by_other() closes that gap by checking
-# port_map.txt's own entries directly, not just the OS's current bind
-# state.
-PORT_MAP_FILE="${CONFIG_DIR}/port_map.txt"
-touch "${PORT_MAP_FILE}"
-
-get_mapped_port() {
-    # Prints the persisted port for $1, or nothing if not yet assigned.
-    awk -v name="$1" '$1 == name { print $2; exit }' "${PORT_MAP_FILE}"
-}
-
-set_mapped_port() {
-    # Records name=$1 -> port=$2, replacing any prior entry for that name.
-    local tmp
-    tmp="$(mktemp)"
-    awk -v name="$1" '$1 != name' "${PORT_MAP_FILE}" > "$tmp"
-    echo "$1 $2" >> "$tmp"
-    mv "$tmp" "${PORT_MAP_FILE}"
-}
-
-port_claimed_by_other() {
-    # True (exit 0) if $1 is recorded in port_map.txt against some name
-    # OTHER than $2 -- i.e. this port is already owned by a different
-    # zone, regardless of whether that zone's process happens to be
-    # running (and therefore visible to is_port_available()) right now.
-    local port="$1" self_name="$2"
-    awk -v port="$port" -v self="$self_name" '
-        $2 == port && $1 != self { found=1 }
-        END { exit !found }
-    ' "${PORT_MAP_FILE}"
-}
-
 # --- One-time, container-wide services: dbus -> avahi -> nqptp -> castbridge-manager ---
 DBUS_SERVICE="${BASE_DIR}/airplay2-dbus"
 if [ ! -d "$DBUS_SERVICE" ]; then
@@ -393,129 +325,24 @@ exec python3 /usr/sbin/cast_bridge_manager.py >> /config/cast-bridge/logs/cast_b
 EOF
 chmod +x "${CASTBRIDGE_MANAGER_SERVICE}/run"
 
-PORT_BASE=5120
-UDP_PORT_BASE=7001
-while :; do
-    is_port_available "$PORT_BASE" && break
-    PORT_BASE=$((PORT_BASE + 1))
-done
-
-while read -r sink; do
-    [[ -z "$sink" ]] && continue
-    [[ "$sink" == sendspin_* ]] && continue
-
-    friendly_name="$sink"
-    service_dir="${BASE_DIR}/airplay2-${friendly_name}"
-    player_log="/config/shairport-sync/logs/${friendly_name}-ap2.log"
-    config_file="${CONFIG_DIR}/${friendly_name}-ap2.conf"
-
-    mkdir -p "${service_dir}" "${service_dir}/dependencies.d"
-    echo "longrun" > "${service_dir}/type"
-    touch "${service_dir}/dependencies.d/airplay2-dbus"
-    touch "${service_dir}/dependencies.d/airplay2-avahi"
-    touch "${service_dir}/dependencies.d/airplay2-nqptp"
-
-    # Reuse this zone's previously-assigned port if it's still free AND
-    # not claimed by some OTHER zone's own persisted entry. Only fall
-    # forward to a new port (and re-persist it) otherwise — keeping the
-    # port, and therefore the derived AirPlay 2 device ID, stable
-    # across restarts instead of drifting with pactl's scan order.
-    mapped_port="$(get_mapped_port "$friendly_name")"
-    if [[ -n "$mapped_port" ]] && is_port_available "$mapped_port" \
-        && ! port_claimed_by_other "$mapped_port" "$friendly_name"; then
-        current_port="$mapped_port"
-        echo "Reusing persisted port ${current_port} for ${friendly_name}" >> "$log_file"
-    else
-        if [[ -n "$mapped_port" ]]; then
-            if port_claimed_by_other "$mapped_port" "$friendly_name"; then
-                echo "Persisted port ${mapped_port} for ${friendly_name} is also claimed by another zone in port_map.txt, reassigning" >> "$log_file"
-            else
-                echo "Persisted port ${mapped_port} for ${friendly_name} is no longer free, reassigning" >> "$log_file"
-            fi
-        fi
-        while ! is_port_available "$PORT_BASE" || port_claimed_by_other "$PORT_BASE" "$friendly_name"; do
-            PORT_BASE=$((PORT_BASE + 1))
-        done
-        current_port=$PORT_BASE
-        set_mapped_port "$friendly_name" "$current_port"
-        echo "Assigned new port ${current_port} for ${friendly_name}" >> "$log_file"
-        PORT_BASE=$((PORT_BASE + 1))
-    fi
-
-    UDP_PORT_BASE=$((UDP_PORT_BASE + 10))
-    current_sink=$sink
-    current_name="${friendly_name//_/ }"
-    if ! receiver_name="$(python3 /usr/sbin/airplay_name.py "$current_name" 2>>"$log_file")"; then
-        echo "AirPlay receiver name selection failed for ${friendly_name}; correct airplay_name and restart" >> "$log_file"
-        exit 1
-    fi
-    quoted_receiver_name="$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "$receiver_name")"
-    shell_receiver_name="$(printf '%q' "$receiver_name")"
-    current_log=$player_log
-    current_udp_base=$UDP_PORT_BASE
-
-    # Per-zone user overrides, spliced into the general block below via
-    # libconfig's @include. Lives in persistent /config storage and is
-    # never overwritten once it exists, so settings such as
-    # audio_backend_latency_offset_in_seconds survive restarts. The file
-    # must always exist: a missing @include target stops shairport-sync
-    # from parsing its config.
-    custom_file="${CONFIG_DIR}/${friendly_name}-ap2.custom"
-    if [ ! -f "${custom_file}" ]; then
-        cat > "${custom_file}" <<'EOF'
-// Per-zone shairport-sync overrides, included inside general = { ... }
-// Example:
-// audio_backend_latency_offset_in_seconds = -0.15;
-EOF
-        echo "Created ${custom_file}" >> "$log_file"
-    fi
-    if grep -Eq '^[[:space:]]*interface[[:space:]]*=' "${custom_file}"; then
-        echo "AirPlay zone ${friendly_name}: ${custom_file} sets interface, which conflicts with the selected AirPlay interface; remove the interface setting" >> "$log_file"
-        exit 1
-    fi
-    if grep -Eq '^[[:space:]]*name[[:space:]]*=' "${custom_file}"; then
-        echo "AirPlay zone ${friendly_name}: ${custom_file} sets name, which conflicts with airplay_name; remove the name setting" >> "$log_file"
-        exit 1
-    fi
-
-    cat > "${config_file}" <<EOF
-general :
-{
-  name = ${quoted_receiver_name};
-  port = ${current_port};
-  interface = "${AIRPLAY_INTERFACE}";
-  output_backend = "pulseaudio";
-  udp_port_base = ${current_udp_base};
-  mdns_backend = "avahi";
-  @include "${custom_file}"
-};
-sessioncontrol :
-{
-  allow_session_interruption = "yes";
-};
-diagnostics :
-{
-  log_show_time_since_startup = "yes";
-  log_show_time_since_last_message = "no";
-};
-pulseaudio :
-{
-  sink = "${current_sink}";
-  application_name = "Shairport Sync";
-};
-EOF
-
-    cat > "${service_dir}/run" <<EOF
+# Sink-backed receiver processes are supervised by one manager so sink
+# removal/reappearance and PulseAudio reconnects cannot leave stale
+# Shairport Sync connections behind. Stable intentionally keeps its
+# existing remap-sink-only discovery behavior (no standalone Bluetooth
+# zones); Beta enables its additional Bluetooth zone support.
+SINK_ZONE_MANAGER_SERVICE="${BASE_DIR}/airplay2-sink-zone-manager"
+if [ ! -d "$SINK_ZONE_MANAGER_SERVICE" ]; then
+    mkdir -p "$SINK_ZONE_MANAGER_SERVICE" "${SINK_ZONE_MANAGER_SERVICE}/dependencies.d"
+    echo "longrun" > "${SINK_ZONE_MANAGER_SERVICE}/type"
+    touch "${SINK_ZONE_MANAGER_SERVICE}/dependencies.d/airplay2-dbus"
+    touch "${SINK_ZONE_MANAGER_SERVICE}/dependencies.d/airplay2-avahi"
+    touch "${SINK_ZONE_MANAGER_SERVICE}/dependencies.d/airplay2-nqptp"
+    touch "${CONTENTS_DIR}/airplay2-sink-zone-manager"
+fi
+cat > "${SINK_ZONE_MANAGER_SERVICE}/run" <<EOF
 #!/usr/bin/with-contenv bashio
-truncate -s 0 "${current_log}"
-echo "\$(date) - Starting AirPlay 2 receiver for ${current_sink} on port ${current_port}" >> "${current_log}"
-exec shairport-sync \
-    -a ${shell_receiver_name} \
-    -p ${current_port} \
-    -c "${config_file}" \
-    -vv \
-    >> "${current_log}" 2>&1
+export AIRPLAY_INTERFACE="${AIRPLAY_INTERFACE}"
+mkdir -p /config/shairport-sync/logs
+exec python3 /usr/sbin/sink_zone_manager.py >> /config/shairport-sync/logs/sink_zone_manager.log 2>&1
 EOF
-    chmod +x "${service_dir}/run"
-    touch "${CONTENTS_DIR}/airplay2-${friendly_name}"
-done < <(pactl list sinks short | awk '/module-remap-sink/ {print $2}')
+chmod +x "${SINK_ZONE_MANAGER_SERVICE}/run"

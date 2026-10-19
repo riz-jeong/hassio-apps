@@ -541,7 +541,12 @@ class Manager:
                     self.zones.pop(s).stop()
                 self.stop_event.wait(2)   # let PulseAudio finish loading its cards
                 bounce_and_recreate_remaps(desired)
-                names = list_remap_sinks() or names
+                recovered_names = list_remap_sinks()
+                if recovered_names is None:
+                    log.warning("PulseAudio is back but its sink list is unavailable; "
+                                "zones will start after a later successful sink query")
+                    recovered_names = []
+                names = recovered_names
                 desired = self._desired(names)
                 add = [s for s in desired if s not in self.zones]
                 remove = []

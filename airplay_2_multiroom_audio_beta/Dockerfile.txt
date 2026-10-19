@@ -65,6 +65,7 @@ COPY airplay_name.py /usr/sbin/airplay_name.py
 COPY run_stage2_hooks.sh /usr/sbin/run_stage2_hooks.sh
 COPY cast_bridge_manager.py /usr/sbin/cast_bridge_manager.py
 COPY cast_bridge_zone.py /usr/sbin/cast_bridge_zone.py
+COPY sink_zone_manager.py /usr/sbin/sink_zone_manager.py
 RUN chmod +x /usr/sbin/generate_airplay2_services.sh \
              /usr/sbin/run_stage2_hooks.sh
 ENV S6_STAGE2_HOOK=/usr/sbin/run_stage2_hooks.sh

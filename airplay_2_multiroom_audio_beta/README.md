@@ -32,23 +32,29 @@ The `airplay_name` add-on option controls the name advertised to Apple devices. 
 
 **Sink-backed zones (local sound cards, USB DACs, HDMI, Bluetooth speakers, etc.):** this addon only creates an AirPlay 2 zone for a PulseAudio sink that's a `module-remap-sink` — and it names the zone after that remap sink's own name, so the remap sink's name *is* what shows up in your AirPlay picker. A raw hardware sink on its own (even a plain stereo card with nothing multi-channel about it) won't be picked up until it has a remap sink built on top of it — this applies even when the remap sink would just be a 1:1, all-channels passthrough of the card. A Bluetooth speaker works the same way once it's paired and PulseAudio shows it as a sink; see **Using a Bluetooth speaker as a zone** under **Advanced**.
 
-The recommended way to create these remap sinks is with the **Multi-room Audio Controller** addon, rather than creating them by hand with `pactl`. Add or rename a zone there, restart this addon afterward, and it'll pick up the new remap sink and create (or rename) the matching AirPlay 2 zone for it automatically.
+The recommended way to create these remap sinks is with the **Multi-room Audio Controller** addon, rather than creating them by hand with `pactl`. This add-on monitors PulseAudio sink changes and adds, removes, or restarts the matching AirPlay 2 zone automatically. Beta also creates zones for standalone Bluetooth A2DP sinks; when a remap sink sits on a Bluetooth sink, the remap sink remains the zone.
 
 **Cast-backed zones (Google/Nest speakers, Cast groups, Cast-enabled soundbars):** nothing to configure — every Cast device found on the network gets its own AirPlay 2 zone automatically, unless it's already got a native AirPlay 2 receiver of its own (see above).
 
 ## Restarting
 
 Restart this addon whenever you:
-- Add, rename, or remove a PulseAudio remap sink.
 - Add or remove a Google Cast device on your network.
+- Change add-on options or per-zone configuration.
 
-A restart re-scans both PulseAudio and the network and regenerates the AirPlay 2 zone list to match. Zone names and their AirPlay 2 ports are persisted across restarts, so a zone's identity in your AirPlay picker stays stable — it won't reappear as a "new" device each time.
+A restart re-scans the network and regenerates Cast receivers. PulseAudio-backed zones are monitored while the add-on runs. Zone names and their AirPlay 2 ports are persisted, so a zone's identity in your AirPlay picker stays stable across restarts.
 
-If your AV receiver or a TV was power-cycled or had its HDMI cable unplugged, restarting this addon (or just waiting for its next scheduled restart) will also recover sinks that PulseAudio otherwise leaves silently stuck.
+If PulseAudio restarts or a configured sink disappears, the zone manager stops the affected Shairport Sync process and starts it again when PulseAudio and the exact sink are available. It does not switch the zone to another output sink. If the physical DAC or HDMI output remains silent while PulseAudio reports its sink as present, inspect the PulseAudio and Shairport Sync logs; restarting the add-on can reinitialize a hardware sink that PulseAudio has left stuck.
 
 ## Troubleshooting
 
 Logs live under `/config/shairport-sync/logs/`:
+
+- `generate_airplay2_services.log` records startup interface and option checks.
+- `sink_zone_manager.log` records PulseAudio sink changes, Shairport Sync exits, and bounded restart attempts.
+- Per-zone `*-ap2.log` files contain Shairport Sync's session, timing, and volume diagnostics.
+
+`airplay_volume = -144.000000` is Shairport Sync reporting the AirPlay source's mute value; `software mute is enabled` alone does not show that the add-on forced mute. Correlate these lines with later source volume updates, `Play started`/`Play stopped`, and the PulseAudio sink input's `Corked`/`Mute` values. `buffered audio port closed by remote end` indicates that the remote side closed that transport; by itself it does not identify why. A transient NQPTP clock warning also needs timestamp correlation before treating it as the cause. During playback, use `pactl list sinks short` to confirm the configured sink is present and `pactl list sink-inputs` to inspect the Shairport Sync sink input and its target, mute, and cork state.
 
 - `generate_airplay2_services.log` — what happened on the most recent sink scan/zone generation pass (which sinks were found, which ports were assigned, any sinks that had to be bounced/recreated).
 - `<zone name>-ap2.log` — each zone's own `shairport-sync` (AirPlay 2 receiver) log.

@@ -11,3 +11,10 @@ configuration:
       Interface used for AirPlay and mDNS discovery. Leave as auto to use the
       interface with the best eligible default route, or enter an interface
       name such as eth0. The interface must be up and have a LAN address.
+  airplay_decoded_buffer_seconds:
+    name: AirPlay decoded audio buffer (seconds)
+    description: >-
+      Buffer capacity for AirPlay 2 buffered audio streams. Defaults to 5
+      seconds to better tolerate bursty senders. Use an integer from 1 to 10;
+      larger values can use more memory. Existing per-zone custom settings take
+      precedence.

@@ -82,6 +82,22 @@ def shairport_verbosity() -> str:
         level = "vv"
     return "-" + level if level in ("v", "vv", "vvv") else "-vv"
 
+
+def decoded_buffer_seconds() -> int:
+    """Return the bounded AirPlay 2 decoded-audio buffer from add-on options."""
+    try:
+        options = json.loads(OPTIONS_FILE.read_text())
+    except FileNotFoundError:
+        options = {}
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"could not read add-on options from {OPTIONS_FILE}: {exc}") from exc
+    if not isinstance(options, dict):
+        raise ValueError(f"add-on options in {OPTIONS_FILE} must be a JSON object")
+    seconds = options.get("airplay_decoded_buffer_seconds", 5)
+    if type(seconds) is not int or not 1 <= seconds <= 10:
+        raise ValueError("airplay_decoded_buffer_seconds must be an integer from 1 to 10")
+    return seconds
+
 # Same starting points the shell generator used. Cast zones use 5150+ /
 # 6800+, so the two ranges only meet if there are a lot of zones, and
 # port_map.txt plus is_port_available() catch that case anyway.
@@ -354,6 +370,12 @@ class Zone:
 
     def _write_config(self):
         custom_config = self.custom_file.read_text()
+        buffer_seconds = decoded_buffer_seconds()
+        custom_buffer = re.search(
+            r"(?m)^\s*audio_decoded_buffer_desired_length_in_seconds\s*=", custom_config)
+        buffer_setting = "" if custom_buffer else (
+            "  audio_decoded_buffer_desired_length_in_seconds = "
+            f"{buffer_seconds:.1f};")
         if re.search(r"(?m)^\s*interface\s*=", custom_config):
             raise ValueError(
                 f"{self.custom_file} sets interface, which conflicts with the selected "
@@ -373,6 +395,7 @@ general :
   output_backend = "pulseaudio";
   udp_port_base = {self.udp_base};
   mdns_backend = "avahi";
+{buffer_setting}
   @include "{self.custom_file}"
 }};
 sessioncontrol :
@@ -390,6 +413,9 @@ pulseaudio :
   application_name = "Shairport Sync";
 }};
 """)
+        selected_buffer = "custom" if custom_buffer else f"{buffer_seconds}s"
+        log.info("AirPlay zone '%s' uses decoded audio buffer: %s",
+                 self.display_name, selected_buffer)
 
     def start(self, fresh: bool = True):
         """fresh=True truncates the zone log (a new session of the zone);

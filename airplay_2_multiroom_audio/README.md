@@ -28,6 +28,10 @@ To select an interface manually, set `airplay_interface` to its Linux interface 
 
 The `airplay_name` add-on option controls the name advertised to Apple devices. Leave it as `auto` to preserve the current per-zone names (derived from each sink or Cast device), or set it to a custom name such as `Living Room`, `USB DAC`, or `JCH Hi-Fi`. The value supports spaces and Unicode and must be non-empty, contain no line breaks/control characters, and fit within Shairport Sync's 50-character and mDNS's 63-byte limits. A plain custom name is used for every receiver, so it can make multiple zones indistinguishable in the picker. In a multi-zone setup, include `{name}` to retain each zone's unique current name, for example `Living Room - {name}`; `auto` also keeps the existing names distinct. Restart the add-on after changing the option. The name in the Shairport Sync configuration and its `-a` argument are updated together, so both AirPlay and RAOP mDNS records are refreshed when the receiver restarts. A rename can cause Apple devices or Music Assistant to treat a receiver as a new entry; the add-on's internal sink/Cast keys and saved port mappings remain unchanged. Per-zone `.custom` files must not define `name`; remove that setting if startup reports a conflict.
 
+## Buffered AirPlay audio
+
+The `airplay_decoded_buffer_seconds` option defaults to `5` seconds (allowed range: `1`–`10`). It sets Shairport Sync's decoded-audio buffer capacity for buffered AirPlay 2 audio, which can help tolerate bursty senders. Larger values use more memory. This setting does not affect realtime AirPlay streams or Cast pipe-zone buffering. Restart the add-on after changing it. A per-zone `.custom` file can override it by setting `audio_decoded_buffer_desired_length_in_seconds`; when present, that custom value takes precedence for that zone.
+
 ## Setting up a new zone
 
 **Sink-backed zones (local sound cards, USB DACs, HDMI, Bluetooth speakers, etc.):** this addon only creates an AirPlay 2 zone for a PulseAudio sink that's a `module-remap-sink` — and it names the zone after that remap sink's own name, so the remap sink's name *is* what shows up in your AirPlay picker. A raw hardware sink on its own (even a plain stereo card with nothing multi-channel about it) won't be picked up until it has a remap sink built on top of it — this applies even when the remap sink would just be a 1:1, all-channels passthrough of the card. A Bluetooth speaker works the same way once it's paired and PulseAudio shows it as a sink; see **Using a Bluetooth speaker as a zone** under **Advanced**.
@@ -89,7 +93,7 @@ Each sink-backed zone's `shairport-sync` configuration is regenerated on every s
 
 - The file is created automatically on the first start after the zone exists, containing only comments, so it does nothing until you add settings to it. It is never overwritten once it exists, and one file is created per zone.
 - It is spliced into that zone's `general` block with libconfig's `@include`, so put only bare `general` settings in it, each ending with a semicolon. Don't add a `general = { ... }` wrapper, and don't use it for other groups such as `sessioncontrol` or `pulseaudio`.
-- Don't set anything the addon already writes into `general`: `name`, `port`, `interface`, `output_backend`, `udp_port_base`, or `mdns_backend`. A key defined twice stops that zone's `shairport-sync` from starting.
+- Don't set anything the addon already writes into `general`: `name`, `port`, `interface`, `output_backend`, `udp_port_base`, or `mdns_backend`. A key defined twice stops that zone's `shairport-sync` from starting. The decoded audio buffer is an exception: setting `audio_decoded_buffer_desired_length_in_seconds` in this file overrides the add-on option for that zone.
 - A syntax error in the file also stops that one zone from starting. The error appears in `<zone name>-ap2.log`.
 - Restart the addon after editing the file.
 

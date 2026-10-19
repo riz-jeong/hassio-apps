@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -25,6 +26,26 @@ def load_manager(addon_name, module_name):
 
 
 class PlaybackReliabilityTests(unittest.TestCase):
+    def test_both_addons_expose_the_same_bounded_buffer_option(self):
+        for addon, version in (("airplay_2_multiroom_audio", '"1.05"'),
+                               ("airplay_2_multiroom_audio_beta", '"0.13"')):
+            with self.subTest(addon=addon):
+                schema = (ROOT / addon / "config.yaml").read_text()
+                translation = (ROOT / addon / "en.yaml").read_text()
+                readme = (ROOT / addon / "README.md").read_text()
+                self.assertIn(f"version: {version}", schema)
+                self.assertIn("airplay_decoded_buffer_seconds: 5", schema)
+                self.assertIn("airplay_decoded_buffer_seconds: int(1,10)", schema)
+                self.assertIn("airplay_decoded_buffer_seconds:", translation)
+                self.assertIn("audio_decoded_buffer_desired_length_in_seconds", readme)
+
+    def test_cast_pipe_buffer_remains_separate_from_sink_zone_buffer(self):
+        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+            with self.subTest(addon=addon):
+                manager = (ROOT / addon / "cast_bridge_manager.py").read_text()
+                self.assertIn("audio_backend_buffer_desired_length_in_seconds = 0.1;", manager)
+                self.assertIn("audio_decoded_buffer_desired_length_in_seconds = 0.35;", manager)
+
     def test_stable_starts_the_sink_zone_manager_instead_of_static_zone_services(self):
         script = (ROOT / "airplay_2_multiroom_audio" /
                   "generate_airplay2_services.sh").read_text()
@@ -55,6 +76,65 @@ class PlaybackReliabilityTests(unittest.TestCase):
                 self.assertIn('output_backend = "pulseaudio";', config)
                 self.assertIn('sink = "airplay_usb_dac";', config)
                 self.assertEqual(1, config.count('sink ='))
+
+    def test_buffered_audio_depth_defaults_to_five_seconds_and_is_configurable(self):
+        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+            with self.subTest(addon=addon), tempfile.TemporaryDirectory() as tmp:
+                manager = load_manager(addon, f"{addon}_audio_buffer")
+                manager.OPTIONS_FILE = Path(tmp) / "options.json"
+                manager.CONFIG_DIR = Path(tmp)
+                manager.LOG_DIR = Path(tmp)
+                zone = manager.Zone("airplay_usb_dac", 5120, 7011,
+                                    pa_sink="airplay_usb_dac")
+                zone._ensure_custom_file()
+                zone._write_config()
+                generated = zone.config_file.read_text()
+                self.assertIn("audio_decoded_buffer_desired_length_in_seconds = 5.0;",
+                              generated)
+
+                manager.OPTIONS_FILE.write_text('{"airplay_decoded_buffer_seconds": 3}')
+                zone._write_config()
+                generated = zone.config_file.read_text()
+                self.assertIn("audio_decoded_buffer_desired_length_in_seconds = 3.0;",
+                              generated)
+                self.assertEqual(1, generated.count(
+                    "audio_decoded_buffer_desired_length_in_seconds ="))
+
+    def test_invalid_buffered_audio_depth_fails_clearly(self):
+        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+            for value in (0, 11, True, "5"):
+                with self.subTest(addon=addon, value=value), tempfile.TemporaryDirectory() as tmp:
+                    manager = load_manager(addon, f"{addon}_invalid_audio_buffer_{value}")
+                    manager.OPTIONS_FILE = Path(tmp) / "options.json"
+                    manager.OPTIONS_FILE.write_text(
+                        json.dumps({"airplay_decoded_buffer_seconds": value}))
+                    manager.CONFIG_DIR = Path(tmp)
+                    manager.LOG_DIR = Path(tmp)
+                    zone = manager.Zone("airplay_usb_dac", 5120, 7011,
+                                        pa_sink="airplay_usb_dac")
+                    zone._ensure_custom_file()
+                    with self.assertRaisesRegex(
+                            ValueError,
+                            "airplay_decoded_buffer_seconds must be an integer from 1 to 10"):
+                        zone._write_config()
+
+    def test_custom_buffer_setting_takes_precedence_without_duplicate_directive(self):
+        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+            with self.subTest(addon=addon), tempfile.TemporaryDirectory() as tmp:
+                manager = load_manager(addon, f"{addon}_custom_audio_buffer")
+                manager.OPTIONS_FILE = Path(tmp) / "options.json"
+                manager.OPTIONS_FILE.write_text('{"airplay_decoded_buffer_seconds": 5}')
+                manager.CONFIG_DIR = Path(tmp)
+                manager.LOG_DIR = Path(tmp)
+                zone = manager.Zone("airplay_usb_dac", 5120, 7011,
+                                    pa_sink="airplay_usb_dac")
+                zone.custom_file.write_text(
+                    "audio_decoded_buffer_desired_length_in_seconds = 2.5;\n")
+                zone._write_config()
+                generated = zone.config_file.read_text()
+                self.assertNotIn("audio_decoded_buffer_desired_length_in_seconds =", generated)
+                self.assertIn("audio_decoded_buffer_desired_length_in_seconds = 2.5;",
+                              zone.custom_file.read_text())
 
     def test_generated_configs_preserve_custom_settings_without_forcing_mute(self):
         for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):

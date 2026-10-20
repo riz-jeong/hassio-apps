@@ -27,19 +27,20 @@ def load_manager(addon_name, module_name):
 
 class PlaybackReliabilityTests(unittest.TestCase):
     def test_both_addons_expose_the_same_bounded_buffer_option(self):
-        for addon, version in (("airplay_2_multiroom_audio", '"1.06"'),
-                               ("airplay_2_multiroom_audio_beta", '"0.14"')):
+        for addon, version in (("airplay_2_multiroom_audio", '"1.07"'),
+                               ("airplay_2_multiroom_audio_beta", '"0.15"')):
             with self.subTest(addon=addon):
                 schema = (ROOT / addon / "config.yaml").read_text()
                 translation = (ROOT / addon / "en.yaml").read_text()
                 readme = (ROOT / addon / "README.md").read_text()
                 self.assertIn(f"version: {version}", schema)
-                self.assertIn("airplay_decoded_buffer_seconds: 5", schema)
+                self.assertIn("airplay_decoded_buffer_seconds: 3", schema)
                 self.assertIn("airplay_decoded_buffer_seconds: int(1,10)", schema)
                 self.assertIn("airplay_decoded_buffer_seconds:", translation)
                 self.assertIn("audio_decoded_buffer_desired_length_in_seconds", readme)
                 self.assertIn("Shairport Sync `5.6`", readme)
                 self.assertIn("NQPTP `1.2.9`", readme)
+                self.assertIn("48 kHz", readme)
 
     def test_addons_pin_compatible_latest_shairport_and_nqptp_releases(self):
         dockerfiles = (
@@ -101,9 +102,11 @@ class PlaybackReliabilityTests(unittest.TestCase):
                 config = zone.config_file.read_text()
                 self.assertIn('output_backend = "pulseaudio";', config)
                 self.assertIn('sink = "airplay_usb_dac";', config)
+                self.assertIn("output_rate = 48000;", config)
+                self.assertIn("audio_backend_buffer_desired_length_in_seconds = 0.35;", config)
                 self.assertEqual(1, config.count('sink ='))
 
-    def test_buffered_audio_depth_defaults_to_five_seconds_and_is_configurable(self):
+    def test_buffered_audio_depth_defaults_to_three_seconds_and_is_configurable(self):
         for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
             with self.subTest(addon=addon), tempfile.TemporaryDirectory() as tmp:
                 manager = load_manager(addon, f"{addon}_audio_buffer")
@@ -115,13 +118,13 @@ class PlaybackReliabilityTests(unittest.TestCase):
                 zone._ensure_custom_file()
                 zone._write_config()
                 generated = zone.config_file.read_text()
-                self.assertIn("audio_decoded_buffer_desired_length_in_seconds = 5.0;",
+                self.assertIn("audio_decoded_buffer_desired_length_in_seconds = 3.0;",
                               generated)
 
-                manager.OPTIONS_FILE.write_text('{"airplay_decoded_buffer_seconds": 3}')
+                manager.OPTIONS_FILE.write_text('{"airplay_decoded_buffer_seconds": 2}')
                 zone._write_config()
                 generated = zone.config_file.read_text()
-                self.assertIn("audio_decoded_buffer_desired_length_in_seconds = 3.0;",
+                self.assertIn("audio_decoded_buffer_desired_length_in_seconds = 2.0;",
                               generated)
                 self.assertEqual(1, generated.count(
                     "audio_decoded_buffer_desired_length_in_seconds ="))
@@ -160,6 +163,24 @@ class PlaybackReliabilityTests(unittest.TestCase):
                 generated = zone.config_file.read_text()
                 self.assertNotIn("audio_decoded_buffer_desired_length_in_seconds =", generated)
                 self.assertIn("audio_decoded_buffer_desired_length_in_seconds = 2.5;",
+                              zone.custom_file.read_text())
+
+    def test_custom_backend_buffer_setting_takes_precedence(self):
+        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+            with self.subTest(addon=addon), tempfile.TemporaryDirectory() as tmp:
+                manager = load_manager(addon, f"{addon}_custom_backend_buffer")
+                manager.CONFIG_DIR = Path(tmp)
+                manager.LOG_DIR = Path(tmp)
+                zone = manager.Zone("airplay_usb_dac", 5120, 7011,
+                                    pa_sink="airplay_usb_dac")
+                zone._ensure_custom_file()
+                zone.custom_file.write_text(
+                    "audio_backend_buffer_desired_length_in_seconds = 0.5;\n")
+                zone._write_config()
+                generated = zone.config_file.read_text()
+                self.assertEqual(0, generated.count(
+                    "audio_backend_buffer_desired_length_in_seconds ="))
+                self.assertIn("audio_backend_buffer_desired_length_in_seconds = 0.5;",
                               zone.custom_file.read_text())
 
     def test_generated_configs_preserve_custom_settings_without_forcing_mute(self):

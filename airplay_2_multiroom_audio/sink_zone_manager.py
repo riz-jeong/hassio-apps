@@ -91,7 +91,7 @@ def decoded_buffer_seconds() -> int:
         raise ValueError(f"could not read add-on options from {OPTIONS_FILE}: {exc}") from exc
     if not isinstance(options, dict):
         raise ValueError(f"add-on options in {OPTIONS_FILE} must be a JSON object")
-    seconds = options.get("airplay_decoded_buffer_seconds", 5)
+    seconds = options.get("airplay_decoded_buffer_seconds", 3)
     if type(seconds) is not int or not 1 <= seconds <= 10:
         raise ValueError("airplay_decoded_buffer_seconds must be an integer from 1 to 10")
     return seconds
@@ -343,6 +343,10 @@ class Zone:
         buffer_setting = "" if custom_buffer else (
             "  audio_decoded_buffer_desired_length_in_seconds = "
             f"{buffer_seconds:.1f};")
+        custom_backend_buffer = re.search(
+            r"(?m)^\s*audio_backend_buffer_desired_length_in_seconds\s*=", custom_config)
+        backend_buffer_setting = "" if custom_backend_buffer else (
+            "  audio_backend_buffer_desired_length_in_seconds = 0.35;")
         if re.search(r"(?m)^\s*interface\s*=", custom_config):
             raise ValueError(
                 f"{self.custom_file} sets interface, which conflicts with the selected "
@@ -363,6 +367,7 @@ general :
   udp_port_base = {self.udp_base};
   mdns_backend = "avahi";
 {buffer_setting}
+{backend_buffer_setting}
   @include "{self.custom_file}"
 }};
 sessioncontrol :
@@ -377,6 +382,7 @@ diagnostics :
 pulseaudio :
 {{
   sink = "{self.pa_sink}";
+  output_rate = 48000;
   application_name = "Shairport Sync";
 }};
 """)

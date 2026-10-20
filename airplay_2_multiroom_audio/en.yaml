@@ -14,7 +14,8 @@ configuration:
   airplay_decoded_buffer_seconds:
     name: AirPlay decoded audio buffer (seconds)
     description: >-
-      Buffer capacity for AirPlay 2 buffered audio streams. Defaults to 5
-      seconds to better tolerate bursty senders. Use an integer from 1 to 10;
-      larger values can use more memory. Existing per-zone custom settings take
-      precedence.
+      Buffer capacity for AirPlay 2 buffered audio streams. Defaults to 3
+      seconds as a balance of burst tolerance and buffering. Use an integer from 1 to 10;
+      larger values can use more memory. The PulseAudio backend buffer is set
+      to 0.35 seconds and output stays at 48 kHz across track transitions.
+      Existing per-zone custom settings take precedence.

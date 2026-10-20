@@ -5,12 +5,14 @@ configuration:
       Name advertised in Apple's AirPlay picker. Leave as auto to keep each
       receiver's current name, or enter a name up to 50 characters and 63 UTF-8
       bytes. Include {name} to keep each zone's current name in a custom template.
+      Default: auto.
   airplay_interface:
     name: AirPlay network interface
     description: >-
       Interface used for AirPlay and mDNS discovery. Leave as auto to use the
       interface with the best eligible default route, or enter an interface
       name such as eth0. The interface must be up and have a LAN address.
+      Default: auto.
   airplay_decoded_buffer_seconds:
     name: AirPlay decoded audio buffer (seconds)
     description: >-
@@ -19,11 +21,17 @@ configuration:
       larger values can use more memory. The PulseAudio backend buffer is set
       to 0.35 seconds. Output uses the connected sink's current sample rate,
       falling back to automatic rate selection if PulseAudio cannot report it.
-      Existing per-zone custom settings take precedence.
+      Existing per-zone custom settings take precedence. Default: 3 seconds.
 
   airplay_lossless_mode:
     name: AirPlay lossless audio
     description: >-
-      Keep AirPlay lossless audio enabled (on, default), or turn it off to
+      Keep AirPlay lossless audio enabled, or turn it off to
       avoid audible glitches some senders can produce while changing between
       lossy and lossless streams. Restart the add-on after changing this option.
+      Default: on.
+  log_level:
+    name: Shairport Sync log level
+    description: >-
+      Select v for brief logs, vv for normal detail, or vvv for detailed
+      diagnostics. Applies to sink-backed and Cast-backed receivers. Default: vv.

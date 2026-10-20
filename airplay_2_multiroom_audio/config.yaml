@@ -1,5 +1,5 @@
 name: Airplay2 Multiroom Audio
-version: "1.08"
+version: "1.09"
 slug: airplay_2_multiroom_audio
 description: Create AirPlay 2 receivers from local audio devices. Configure the advertised AirPlay receiver name with airplay_name, or use auto to retain each zone's current name.
 arch:
@@ -20,8 +20,10 @@ options:
   airplay_name: auto
   airplay_decoded_buffer_seconds: 3
   airplay_lossless_mode: "on"
+  log_level: vv
 schema:
   airplay_interface: str
   airplay_name: str
   airplay_decoded_buffer_seconds: int(1,10)
   airplay_lossless_mode: list(on|off)
+  log_level: list(v|vv|vvv)

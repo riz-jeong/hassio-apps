@@ -82,6 +82,14 @@ AIRPLAY_INTERFACE = os.environ.get("AIRPLAY_INTERFACE", "")
 OPTIONS_FILE = Path(os.environ.get("CAST_OPTIONS_FILE", "/data/options.json"))
 DISCOVERY_TIMEOUT_SECONDS = int(os.environ.get("CAST_DISCOVERY_TIMEOUT", "10"))
 
+
+def shairport_verbosity() -> str:
+    try:
+        level = json.loads(OPTIONS_FILE.read_text()).get("log_level", "vv")
+    except (OSError, ValueError, AttributeError):
+        level = "vv"
+    return "-" + level if level in ("v", "vv", "vvv") else "-vv"
+
 # How long to listen for existing _airplay._tcp mDNS advertisers before
 # deciding which Cast devices already have native AirPlay 2 (see
 # discover_airplay2_names() below). Matches DISCOVERY_TIMEOUT_SECONDS's
@@ -299,7 +307,8 @@ pipe :
     log.info("Starting shairport-sync for '%s' on port %d -> %s", receiver_name, port, fifo)
     log_fh = open(log_file, "ab")
     return subprocess.Popen(
-        ["shairport-sync", "-a", receiver_name, "-p", str(port), "-c", str(config_file), "-vv"],
+        ["shairport-sync", "-a", receiver_name, "-p", str(port), "-c", str(config_file),
+         shairport_verbosity()],
         stdout=log_fh, stderr=subprocess.STDOUT,
     )
 

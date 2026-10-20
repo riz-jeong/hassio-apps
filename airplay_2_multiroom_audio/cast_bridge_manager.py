@@ -66,6 +66,7 @@ from shairport_config import (
     configured_lossless_mode,
     nqptp_shared_memory_name,
 )
+from parametric_eq import shairport_dsp_config
 
 log = logging.getLogger("cast_bridge_manager")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [castbridge-manager] %(levelname)s %(message)s")
@@ -88,6 +89,7 @@ HTTP_PORT_MAP_FILE = CASTBRIDGE_DIR / "http_port_map.txt"
 # Bridge addon used, kept as-is since nothing about that path was
 # actually part of the config-mismatch problem.
 PIPE_DIR = Path("/media/music/castbridge")
+PEQ_DIR = Path("/run/airplay-peq")
 
 AIRPLAY_INTERFACE = os.environ.get("AIRPLAY_INTERFACE", "")
 
@@ -308,6 +310,7 @@ def start_shairport(name: str, fifo: str, port: int, udp_port_base: int) -> subp
     backend_buffer = configured_cast_backend_buffer(OPTIONS_FILE)
     decoded_buffer = configured_cast_decoded_buffer(OPTIONS_FILE)
     sample_rate = configured_cast_output_rate(OPTIONS_FILE, PIPE_SAMPLE_RATE)
+    dsp_config = shairport_dsp_config(OPTIONS_FILE, sample_rate, PEQ_DIR)
 
     config_file.write_text(f"""\
 general :
@@ -339,11 +342,14 @@ pipe :
   output_rate = {sample_rate};
   output_format = "{PIPE_OUTPUT_FORMAT}";
 }};
+{dsp_config}
 """)
 
     log.info("Starting shairport-sync for '%s' on port %d -> %s", receiver_name, port, fifo)
     log.info("Cast zone '%s': output rate %d Hz, backend buffer %.2f s, decoded buffer %.2f s",
              receiver_name, sample_rate, backend_buffer, decoded_buffer)
+    if dsp_config:
+        log.info("Cast zone '%s' has Parametric EQ enabled", receiver_name)
     log_fh = open_log(log_file)
     return subprocess.Popen(
         ["shairport-sync", "-a", receiver_name, "-p", str(port), "-c", str(config_file), shairport_verbosity()],

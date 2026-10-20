@@ -60,7 +60,9 @@ configuration:
     description: >-
       PCM sample rate used between Shairport Sync, FFmpeg, and Cast devices.
       48000 Hz is the current default; 44100 Hz is provided for compatibility
-      experiments. Restart the add-on after changing this option. Default: 48000 Hz.
+      experiments. This must stay fixed because the raw PCM pipe carries no
+      sample-rate metadata, so automatic per-track rate changes cannot be
+      relayed safely. Restart the add-on after changing this option. Default: 48000 Hz.
   log_level:
     name: Shairport Sync log level
     description: >-
@@ -75,3 +77,59 @@ configuration:
       avoid audible glitches some senders can produce while changing between
       lossy and lossless streams. Restart the add-on after changing this option.
       Default: on.
+  airplay_eq_enabled:
+    name: Enable 5-band Parametric EQ
+    description: >-
+      Apply the five configurable peaking filters below to every AirPlay zone,
+      including Cast relays. Disabled by default so audio remains unchanged.
+      Shairport Sync's convolution DSP supports all fixed output rates exposed
+      by this add-on (44100–192000 Hz). Auto mode generates filters for standard
+      44100 and 48000 Hz AirPlay streams. A sink reporting an unsupported rate
+      will not start while EQ is enabled. EQ changes tone and room
+      response; it does not repair clipping, dropouts, or electrical noise.
+      Restart the add-on after changing EQ settings. Default: off.
+  airplay_eq_band_1_frequency:
+    name: Parametric EQ band 1 frequency (Hz)
+    description: "Center frequency, 20–20000 Hz. Default: 80 Hz."
+  airplay_eq_band_1_gain_db:
+    name: Parametric EQ band 1 gain (dB)
+    description: "Cut or boost from -12 to +12 dB. Default: 0 dB (flat)."
+  airplay_eq_band_1_q:
+    name: Parametric EQ band 1 Q
+    description: "Bandwidth control from 0.1 (wide) to 5.0 (narrow). Default: 1.0."
+  airplay_eq_band_2_frequency:
+    name: Parametric EQ band 2 frequency (Hz)
+    description: "Center frequency, 20–20000 Hz. Default: 250 Hz."
+  airplay_eq_band_2_gain_db:
+    name: Parametric EQ band 2 gain (dB)
+    description: "Cut or boost from -12 to +12 dB. Default: 0 dB (flat)."
+  airplay_eq_band_2_q:
+    name: Parametric EQ band 2 Q
+    description: "Bandwidth control from 0.1 (wide) to 5.0 (narrow). Default: 1.0."
+  airplay_eq_band_3_frequency:
+    name: Parametric EQ band 3 frequency (Hz)
+    description: "Center frequency, 20–20000 Hz. Default: 1000 Hz."
+  airplay_eq_band_3_gain_db:
+    name: Parametric EQ band 3 gain (dB)
+    description: "Cut or boost from -12 to +12 dB. Default: 0 dB (flat)."
+  airplay_eq_band_3_q:
+    name: Parametric EQ band 3 Q
+    description: "Bandwidth control from 0.1 (wide) to 5.0 (narrow). Default: 1.0."
+  airplay_eq_band_4_frequency:
+    name: Parametric EQ band 4 frequency (Hz)
+    description: "Center frequency, 20–20000 Hz. Default: 4000 Hz."
+  airplay_eq_band_4_gain_db:
+    name: Parametric EQ band 4 gain (dB)
+    description: "Cut or boost from -12 to +12 dB. Default: 0 dB (flat)."
+  airplay_eq_band_4_q:
+    name: Parametric EQ band 4 Q
+    description: "Bandwidth control from 0.1 (wide) to 5.0 (narrow). Default: 1.0."
+  airplay_eq_band_5_frequency:
+    name: Parametric EQ band 5 frequency (Hz)
+    description: "Center frequency, 20–20000 Hz. Default: 12000 Hz."
+  airplay_eq_band_5_gain_db:
+    name: Parametric EQ band 5 gain (dB)
+    description: "Cut or boost from -12 to +12 dB. Default: 0 dB (flat)."
+  airplay_eq_band_5_q:
+    name: Parametric EQ band 5 Q
+    description: "Bandwidth control from 0.1 (wide) to 5.0 (narrow). Default: 1.0."

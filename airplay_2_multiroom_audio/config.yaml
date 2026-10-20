@@ -1,5 +1,5 @@
 name: Airplay2 Multiroom Audio
-version: "1.11"
+version: "1.12"
 slug: airplay_2_multiroom_audio
 description: Create AirPlay 2 receivers from local audio devices, Cast devices, and connected Bluetooth audio sinks. Configure receiver names with airplay_name.
 arch:
@@ -23,6 +23,22 @@ options:
   airplay_output_rate: device
   airplay_interpolation: auto
   airplay_lossless_mode: "on"
+  airplay_eq_enabled: false
+  airplay_eq_band_1_frequency: 80
+  airplay_eq_band_1_gain_db: 0.0
+  airplay_eq_band_1_q: 1.0
+  airplay_eq_band_2_frequency: 250
+  airplay_eq_band_2_gain_db: 0.0
+  airplay_eq_band_2_q: 1.0
+  airplay_eq_band_3_frequency: 1000
+  airplay_eq_band_3_gain_db: 0.0
+  airplay_eq_band_3_q: 1.0
+  airplay_eq_band_4_frequency: 4000
+  airplay_eq_band_4_gain_db: 0.0
+  airplay_eq_band_4_q: 1.0
+  airplay_eq_band_5_frequency: 12000
+  airplay_eq_band_5_gain_db: 0.0
+  airplay_eq_band_5_q: 1.0
   cast_backend_buffer_seconds: "0.10"
   cast_decoded_buffer_seconds: "0.35"
   cast_output_rate: "48000"
@@ -35,6 +51,22 @@ schema:
   airplay_output_rate: list(device|auto|44100|48000|88200|96000|176400|192000)
   airplay_interpolation: list(auto|vernier|soxr)
   airplay_lossless_mode: list(on|off)
+  airplay_eq_enabled: bool
+  airplay_eq_band_1_frequency: int(20,20000)
+  airplay_eq_band_1_gain_db: float(-12,12)
+  airplay_eq_band_1_q: float(0.1,5)
+  airplay_eq_band_2_frequency: int(20,20000)
+  airplay_eq_band_2_gain_db: float(-12,12)
+  airplay_eq_band_2_q: float(0.1,5)
+  airplay_eq_band_3_frequency: int(20,20000)
+  airplay_eq_band_3_gain_db: float(-12,12)
+  airplay_eq_band_3_q: float(0.1,5)
+  airplay_eq_band_4_frequency: int(20,20000)
+  airplay_eq_band_4_gain_db: float(-12,12)
+  airplay_eq_band_4_q: float(0.1,5)
+  airplay_eq_band_5_frequency: int(20,20000)
+  airplay_eq_band_5_gain_db: float(-12,12)
+  airplay_eq_band_5_q: float(0.1,5)
   cast_backend_buffer_seconds: list(0.10|0.15|0.20|0.35|0.50)
   cast_decoded_buffer_seconds: list(0.10|0.20|0.35|0.50|1.00)
   cast_output_rate: list(44100|48000)

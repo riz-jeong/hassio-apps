@@ -67,11 +67,13 @@ from shairport_config import (
     configured_lossless_mode,
     nqptp_shared_memory_name,
 )
+from parametric_eq import shairport_dsp_config
 
 log = logging.getLogger("sink_zone_manager")
 
 CONFIG_DIR = Path(os.environ.get("SZM_CONFIG_DIR", "/config/shairport-sync/config"))
 LOG_DIR = Path(os.environ.get("SZM_LOG_DIR", "/config/shairport-sync/logs"))
+PEQ_DIR = Path("/run/airplay-peq")
 PORT_MAP_FILE = CONFIG_DIR / "port_map.txt"
 PORT_MAP_LOCK_FILE = CONFIG_DIR / ".port_map.lock"
 
@@ -441,6 +443,7 @@ class Zone:
         custom_lossless_mode = re.search(r"(?m)^\s*lossless_mode\s*=", custom_config)
         lossless_setting = "" if custom_lossless_mode else (
             f'  lossless_mode = "{configured_lossless_mode(OPTIONS_FILE)}";')
+        dsp_config = shairport_dsp_config(OPTIONS_FILE, self.output_rate, PEQ_DIR)
         output_rate_setting = (str(self.output_rate) if type(self.output_rate) is int
                                else json.dumps(self.output_rate))
         if re.search(r"(?m)^\s*interface\s*=", custom_config):
@@ -490,6 +493,7 @@ pulseaudio :
   output_rate = {output_rate_setting};
   application_name = "Shairport Sync";
 }};
+{dsp_config}
 """)
         selected_buffer = "custom" if custom_buffer else f"{buffer_seconds}s"
         log.info("AirPlay zone '%s' uses decoded audio buffer: %s",
@@ -498,6 +502,8 @@ pulseaudio :
                       else "automatic rate selection")
         log.info("AirPlay zone '%s' uses PulseAudio sink '%s' at %s",
                  self.display_name, self.pa_sink, rate_label)
+        if dsp_config:
+            log.info("AirPlay zone '%s' has Parametric EQ enabled", self.display_name)
 
     def start(self, fresh: bool = True):
         """fresh=True truncates the zone log (a new session of the zone);

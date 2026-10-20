@@ -19,7 +19,7 @@ FROM ghcr.io/home-assistant/base:latest AS alpine-builder
 ARG SHAIRPORT_SYNC_VERSION
 RUN apk add --no-cache \
     build-base git autoconf automake libtool pkgconfig \
-    libconfig-dev popt-dev openssl-dev soxr-dev pulseaudio-dev \
+    libconfig-dev popt-dev openssl-dev soxr-dev pulseaudio-dev libsndfile-dev \
     avahi-dev libplist-dev libsodium-dev libgcrypt-dev \
     util-linux-dev ffmpeg-dev xxd libplist-util ca-certificates
 WORKDIR /tmp
@@ -36,6 +36,7 @@ RUN git clone https://github.com/mikebrady/shairport-sync.git shairport-sync-ap2
         --with-airplay-2 \
         --with-pulseaudio \
         --with-pipe \
+        --with-convolution \
         CFLAGS="-DCONFIG_FOR_LINUX" && \
     make -j$(nproc) && \
     strip shairport-sync && \
@@ -52,7 +53,7 @@ FROM ghcr.io/home-assistant/base:latest AS base
 # same host path either, so keeping this as one addon avoids both
 # problems at the root).
 RUN apk add -U -q --no-cache --no-progress \
-    libconfig popt soxr openssl pulseaudio pulseaudio-utils \
+    libconfig popt soxr openssl pulseaudio pulseaudio-utils libsndfile \
     avahi dbus libplist libplist-util libsodium libgcrypt \
     util-linux ffmpeg-libs ffmpeg iproute2 libgcc libstdc++ bash curl \
     python3 py3-pip
@@ -70,6 +71,7 @@ COPY generate_airplay2_services.sh /usr/sbin/generate_airplay2_services.sh
 COPY network_interface.py /usr/sbin/network_interface.py
 COPY airplay_name.py /usr/sbin/airplay_name.py
 COPY shairport_config.py /usr/sbin/shairport_config.py
+COPY parametric_eq.py /usr/sbin/parametric_eq.py
 COPY run_stage2_hooks.sh /usr/sbin/run_stage2_hooks.sh
 COPY cast_bridge_manager.py /usr/sbin/cast_bridge_manager.py
 COPY cast_bridge_zone.py /usr/sbin/cast_bridge_zone.py

@@ -36,6 +36,10 @@ Every Shairport Sync receiver gets a deterministic, unique NQPTP shared-memory n
 
 The `airplay_decoded_buffer_seconds` option defaults to `3` seconds (allowed range: `1`–`10`). It sets Shairport Sync's decoded-audio buffer capacity for buffered AirPlay 2 audio, which can help tolerate bursty senders. It is a capacity, not a fixed three-second playback delay. Three seconds balances burst tolerance and memory use; raise it if buffered AirPlay 2 streams still stutter, or lower it if you prefer less buffering and your network is stable. This setting does not affect realtime AirPlay streams or Cast pipe-zone buffering. Sink-backed zones default to the connected sink's detected rate (`airplay_output_rate: device`); if PulseAudio cannot report it, Shairport Sync uses automatic rate selection rather than assuming 48 kHz. The PulseAudio backend buffer defaults to 0.35 seconds. Both values are adjustable in the add-on configuration UI. Per-zone `.custom` values for decoded or backend buffers take precedence over the add-on-wide options.
 
+### 5-band Parametric EQ
+
+The optional five-band Parametric EQ is disabled by default and applies to all Shairport Sync zones, including Cast relays. Each band exposes center frequency (20–20000 Hz), gain (-12 to +12 dB), and Q (0.1–5.0) in the add-on configuration UI. All five bands default to 0 dB, which is flat. When enabled with a non-zero gain, startup generates mono PCM16 impulse responses and uses Shairport Sync's convolution DSP; positive EQ peaks receive automatic attenuation to preserve headroom. Fixed rates from 44100 to 192000 Hz supported by the add-on are handled. For `auto`, filters for 44100 and 48000 Hz are generated, matching the standard AirPlay stream rates. If a detected sink reports an unsupported rate, that zone is skipped with an actionable log message while EQ is active. EQ changes tonal balance and can correct measured speaker/room response; it does not remove electrical noise, clipping, or network dropouts. For room correction, measure the speaker and room instead of applying arbitrary boosts.
+
 ### Audio options and defaults
 
 The add-on configuration UI exposes the supported tuning options below. The descriptions show each default; buffer and rate choices are dropdowns, while the decoded AirPlay buffer remains a numeric field. Selecting a listed default restores the original behavior. Restart the add-on after changing an option.
@@ -47,9 +51,13 @@ The add-on configuration UI exposes the supported tuning options below. The desc
 | `airplay_output_rate` | `device` | Sink-backed AirPlay | Use each selected sink's detected rate, Shairport Sync `auto`, or force a listed rate. Forced rates can make PulseAudio resample. |
 | `airplay_interpolation` | `auto` | Sink-backed AirPlay | `auto` selects by CPU capability; `vernier` uses less processing; `soxr` uses higher-quality resampling and more CPU. |
 | `airplay_lossless_mode` | `on` | Sink-backed and Cast | Preserve lossless AirPlay 2 audio, or turn it off to test sender transition compatibility. |
+| `airplay_eq_enabled` | `false` | All receivers | Enable the five-band Parametric EQ. Off preserves unfiltered audio. |
+| `airplay_eq_band_N_frequency` | `80`, `250`, `1000`, `4000`, `12000` Hz | All receivers | Center frequency for bands 1–5 (20–20000 Hz). |
+| `airplay_eq_band_N_gain_db` | `0.0` dB | All receivers | Cut or boost per band (-12 to +12 dB). Positive boosts reduce output headroom automatically. |
+| `airplay_eq_band_N_q` | `1.0` | All receivers | Bandwidth per band (0.1 wide to 5.0 narrow). |
 | `cast_backend_buffer_seconds` | `0.10` s | Cast relays | Shairport Sync pipe backend buffer. Larger values can reduce underruns but add latency. |
 | `cast_decoded_buffer_seconds` | `0.35` s | Cast relays | Decoded audio capacity before piping into the Cast relay. |
-| `cast_output_rate` | `48000` Hz | Cast relays | PCM rate shared by Shairport Sync and FFmpeg (`44100` or `48000` Hz). |
+| `cast_output_rate` | `48000` Hz | Cast relays | Fixed PCM rate shared by Shairport Sync and FFmpeg (`44100` or `48000` Hz). Auto rate switching is intentionally unavailable because the raw pipe carries no rate metadata. |
 | `log_level` | `vv` | All receivers | Shairport Sync verbosity (`v`, `vv`, `vvv`). |
 
 `airplay_name` defaults to `auto` (keep per-zone names), and `airplay_interface` defaults to `auto` (select the eligible default-route interface); both remain configurable in the same UI. Values and defaults are also shown beside their fields there.

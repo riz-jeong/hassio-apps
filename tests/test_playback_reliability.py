@@ -27,7 +27,7 @@ def load_manager(addon_name, module_name):
 
 class PlaybackReliabilityTests(unittest.TestCase):
     def test_addon_exposes_the_bounded_buffer_option(self):
-        for addon, version in (("airplay_2_multiroom_audio", '"1.10"')):
+        for addon, version in (("airplay_2_multiroom_audio", '"1.11"')):
             with self.subTest(addon=addon):
                 schema = (ROOT / addon / "config.yaml").read_text()
                 translation = (ROOT / addon / "en.yaml").read_text()
@@ -37,6 +37,21 @@ class PlaybackReliabilityTests(unittest.TestCase):
                 self.assertIn("airplay_decoded_buffer_seconds: int(1,10)", schema)
                 self.assertIn('airplay_lossless_mode: "on"', schema)
                 self.assertIn("airplay_lossless_mode: list(on|off)", schema)
+                for option in (
+                    'airplay_backend_buffer_seconds: "0.35"',
+                    "airplay_output_rate: device",
+                    "airplay_interpolation: auto",
+                    'cast_backend_buffer_seconds: "0.10"',
+                    'cast_decoded_buffer_seconds: "0.35"',
+                    'cast_output_rate: "48000"',
+                ):
+                    self.assertIn(option, schema)
+                for option in (
+                    "airplay_backend_buffer_seconds:", "airplay_output_rate:",
+                    "airplay_interpolation:", "cast_backend_buffer_seconds:",
+                    "cast_decoded_buffer_seconds:", "cast_output_rate:",
+                ):
+                    self.assertIn(option, translation)
                 self.assertIn("airplay_decoded_buffer_seconds:", translation)
                 self.assertIn("airplay_lossless_mode:", translation)
                 self.assertIn("audio_decoded_buffer_desired_length_in_seconds", readme)

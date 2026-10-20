@@ -59,7 +59,13 @@ from pathlib import Path
 import pychromecast
 import zeroconf as zeroconf_lib
 from airplay_name import configured_name
-from shairport_config import configured_lossless_mode, nqptp_shared_memory_name
+from shairport_config import (
+    configured_cast_backend_buffer,
+    configured_cast_decoded_buffer,
+    configured_cast_output_rate,
+    configured_lossless_mode,
+    nqptp_shared_memory_name,
+)
 
 log = logging.getLogger("cast_bridge_manager")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [castbridge-manager] %(levelname)s %(message)s")
@@ -299,6 +305,9 @@ def start_shairport(name: str, fifo: str, port: int, udp_port_base: int) -> subp
     receiver_name = configured_name(name)
     lossless_mode = configured_lossless_mode(OPTIONS_FILE)
     nqptp_name = nqptp_shared_memory_name("cast", name)
+    backend_buffer = configured_cast_backend_buffer(OPTIONS_FILE)
+    decoded_buffer = configured_cast_decoded_buffer(OPTIONS_FILE)
+    sample_rate = configured_cast_output_rate(OPTIONS_FILE, PIPE_SAMPLE_RATE)
 
     config_file.write_text(f"""\
 general :
@@ -311,8 +320,8 @@ general :
   output_backend = "pipe";
   udp_port_base = {udp_port_base};
   mdns_backend = "avahi";
-  audio_backend_buffer_desired_length_in_seconds = 0.1;
-  audio_decoded_buffer_desired_length_in_seconds = 0.35;
+  audio_backend_buffer_desired_length_in_seconds = {backend_buffer:.2f};
+  audio_decoded_buffer_desired_length_in_seconds = {decoded_buffer:.2f};
   audio_backend_buffer_interpolation_threshold_in_seconds = 0.05;
 }};
 sessioncontrol :
@@ -327,12 +336,14 @@ diagnostics :
 pipe :
 {{
   name = "{fifo}";
-  output_rate = {PIPE_SAMPLE_RATE};
+  output_rate = {sample_rate};
   output_format = "{PIPE_OUTPUT_FORMAT}";
 }};
 """)
 
     log.info("Starting shairport-sync for '%s' on port %d -> %s", receiver_name, port, fifo)
+    log.info("Cast zone '%s': output rate %d Hz, backend buffer %.2f s, decoded buffer %.2f s",
+             receiver_name, sample_rate, backend_buffer, decoded_buffer)
     log_fh = open_log(log_file)
     return subprocess.Popen(
         ["shairport-sync", "-a", receiver_name, "-p", str(port), "-c", str(config_file), shairport_verbosity()],
@@ -358,6 +369,7 @@ def main():
     PIPE_DIR.mkdir(parents=True, exist_ok=True)
 
     casts = discover_chromecasts()
+    cast_sample_rate = configured_cast_output_rate(OPTIONS_FILE, PIPE_SAMPLE_RATE)
 
     # Held from here until the map is saved below, so sink_zone_manager.py
     # cannot add a zone between our load and our save (which would then
@@ -396,7 +408,7 @@ def main():
             "chromecast_uuid": str(cast.cast_info.uuid),
             "chromecast_model_name": cast.cast_info.model_name,
             "http_port": http_port,
-            "sample_rate": PIPE_SAMPLE_RATE,
+            "sample_rate": cast_sample_rate,
             "sample_format": FFMPEG_INPUT_FORMAT,
             "channels": 2,
         }

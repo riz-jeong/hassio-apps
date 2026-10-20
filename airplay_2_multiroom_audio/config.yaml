@@ -1,5 +1,5 @@
 name: Airplay2 Multiroom Audio
-version: "1.10"
+version: "1.11"
 slug: airplay_2_multiroom_audio
 description: Create AirPlay 2 receivers from local audio devices, Cast devices, and connected Bluetooth audio sinks. Configure receiver names with airplay_name.
 arch:
@@ -19,11 +19,23 @@ options:
   airplay_interface: auto
   airplay_name: auto
   airplay_decoded_buffer_seconds: 3
+  airplay_backend_buffer_seconds: "0.35"
+  airplay_output_rate: device
+  airplay_interpolation: auto
   airplay_lossless_mode: "on"
+  cast_backend_buffer_seconds: "0.10"
+  cast_decoded_buffer_seconds: "0.35"
+  cast_output_rate: "48000"
   log_level: vv
 schema:
   airplay_interface: str
   airplay_name: str
   airplay_decoded_buffer_seconds: int(1,10)
+  airplay_backend_buffer_seconds: list(0.15|0.20|0.35|0.50|0.75|1.00)
+  airplay_output_rate: list(device|auto|44100|48000|88200|96000|176400|192000)
+  airplay_interpolation: list(auto|vernier|soxr)
   airplay_lossless_mode: list(on|off)
+  cast_backend_buffer_seconds: list(0.10|0.15|0.20|0.35|0.50)
+  cast_decoded_buffer_seconds: list(0.10|0.20|0.35|0.50|1.00)
+  cast_output_rate: list(44100|48000)
   log_level: list(v|vv|vvv)

@@ -34,7 +34,25 @@ The `airplay_lossless_mode` option defaults to `on`, preserving lossless AirPlay
 
 Every Shairport Sync receiver gets a deterministic, unique NQPTP shared-memory name. This matters because the add-on runs multiple Shairport Sync processes against one NQPTP service; upstream documents that the default shared-memory name can let one instance clearing its timing state affect another instance.
 
-The `airplay_decoded_buffer_seconds` option defaults to `3` seconds (allowed range: `1`–`10`). It sets Shairport Sync's decoded-audio buffer capacity for buffered AirPlay 2 audio, which can help tolerate bursty senders. It is a capacity, not a fixed three-second playback delay. Three seconds balances burst tolerance and memory use; raise it if buffered AirPlay 2 streams still stutter, or lower it if you prefer less buffering and your network is stable. This setting does not affect realtime AirPlay streams or Cast pipe-zone buffering. At zone startup, sink-backed zones read the connected sink's current sample rate from PulseAudio and lock Shairport Sync to it, avoiding format-rate changes at track boundaries. If PulseAudio cannot report the selected physical master sink's rate, Shairport Sync uses its automatic rate selection instead of assuming 48 kHz. The PulseAudio backend buffer is set to 0.35 seconds (Shairport Sync's documented PulseAudio default) to balance underrun resistance and responsiveness. Restart the add-on after changing the decoded buffer. A per-zone `.custom` file can override `audio_decoded_buffer_desired_length_in_seconds` and `audio_backend_buffer_desired_length_in_seconds`; when present, custom values take precedence for that zone.
+The `airplay_decoded_buffer_seconds` option defaults to `3` seconds (allowed range: `1`–`10`). It sets Shairport Sync's decoded-audio buffer capacity for buffered AirPlay 2 audio, which can help tolerate bursty senders. It is a capacity, not a fixed three-second playback delay. Three seconds balances burst tolerance and memory use; raise it if buffered AirPlay 2 streams still stutter, or lower it if you prefer less buffering and your network is stable. This setting does not affect realtime AirPlay streams or Cast pipe-zone buffering. Sink-backed zones default to the connected sink's detected rate (`airplay_output_rate: device`); if PulseAudio cannot report it, Shairport Sync uses automatic rate selection rather than assuming 48 kHz. The PulseAudio backend buffer defaults to 0.35 seconds. Both values are adjustable in the add-on configuration UI. Per-zone `.custom` values for decoded or backend buffers take precedence over the add-on-wide options.
+
+### Audio options and defaults
+
+The add-on configuration UI exposes the supported tuning options below. The descriptions show each default; buffer and rate choices are dropdowns, while the decoded AirPlay buffer remains a numeric field. Selecting a listed default restores the original behavior. Restart the add-on after changing an option.
+
+| Option | Default | Applies to | Purpose |
+| --- | --- | --- | --- |
+| `airplay_decoded_buffer_seconds` | `3` s | Sink-backed AirPlay | Buffered AirPlay 2 decoded-audio capacity (`1`–`10` s). |
+| `airplay_backend_buffer_seconds` | `0.35` s | Sink-backed AirPlay | PulseAudio output buffer; larger values can tolerate scheduling jitter but add responsiveness latency. |
+| `airplay_output_rate` | `device` | Sink-backed AirPlay | Use each selected sink's detected rate, Shairport Sync `auto`, or force a listed rate. Forced rates can make PulseAudio resample. |
+| `airplay_interpolation` | `auto` | Sink-backed AirPlay | `auto` selects by CPU capability; `vernier` uses less processing; `soxr` uses higher-quality resampling and more CPU. |
+| `airplay_lossless_mode` | `on` | Sink-backed and Cast | Preserve lossless AirPlay 2 audio, or turn it off to test sender transition compatibility. |
+| `cast_backend_buffer_seconds` | `0.10` s | Cast relays | Shairport Sync pipe backend buffer. Larger values can reduce underruns but add latency. |
+| `cast_decoded_buffer_seconds` | `0.35` s | Cast relays | Decoded audio capacity before piping into the Cast relay. |
+| `cast_output_rate` | `48000` Hz | Cast relays | PCM rate shared by Shairport Sync and FFmpeg (`44100` or `48000` Hz). |
+| `log_level` | `vv` | All receivers | Shairport Sync verbosity (`v`, `vv`, `vvv`). |
+
+`airplay_name` defaults to `auto` (keep per-zone names), and `airplay_interface` defaults to `auto` (select the eligible default-route interface); both remain configurable in the same UI. Values and defaults are also shown beside their fields there.
 
 This add-on builds the upstream Shairport Sync `5.6` release with NQPTP `1.2.9`; both use Shared Memory Interface version `smi11`. Shairport Sync 5.6 includes fixes for OS 27 buffered audio handling and AirPlay 2 sessions interrupted by periodic connections from other players. The exact Shairport Sync and NQPTP build versions are written to `generate_airplay2_services.log` at startup.
 
@@ -103,7 +121,7 @@ Each sink-backed zone's `shairport-sync` configuration is regenerated on every s
 
 - The file is created automatically on the first start after the zone exists, containing only comments, so it does nothing until you add settings to it. It is never overwritten once it exists, and one file is created per zone.
 - It is spliced into that zone's `general` block with libconfig's `@include`, so put only bare `general` settings in it, each ending with a semicolon. Don't add a `general = { ... }` wrapper, and don't use it for other groups such as `sessioncontrol` or `pulseaudio`.
-- Don't set anything the addon already writes into `general`: `name`, `nqptp_shared_memory_interface_name`, `port`, `interface`, `output_backend`, `udp_port_base`, or `mdns_backend`. A key defined twice stops that zone's `shairport-sync` from starting. The decoded audio and backend buffers are exceptions: setting `audio_decoded_buffer_desired_length_in_seconds` or `audio_backend_buffer_desired_length_in_seconds` in this file overrides the generated default for that zone. You can also set `lossless_mode` per zone to override the add-on-wide `airplay_lossless_mode` option.
+- Don't set anything the addon already writes into `general`: `name`, `nqptp_shared_memory_interface_name`, `port`, `interface`, `output_backend`, `udp_port_base`, or `mdns_backend`. A key defined twice stops that zone's `shairport-sync` from starting. Decoded and backend buffers and interpolation are exceptions: values set in this file override the generated defaults for that zone. You can also set `lossless_mode` per zone to override the add-on-wide `airplay_lossless_mode` option.
 - A syntax error in the file also stops that one zone from starting. The error appears in `<zone name>-ap2.log`.
 - Restart the addon after editing the file.
 

@@ -60,7 +60,13 @@ import threading
 import time
 from pathlib import Path
 from airplay_name import configured_name
-from shairport_config import configured_lossless_mode, nqptp_shared_memory_name
+from shairport_config import (
+    configured_airplay_backend_buffer,
+    configured_airplay_interpolation,
+    configured_airplay_output_rate,
+    configured_lossless_mode,
+    nqptp_shared_memory_name,
+)
 
 log = logging.getLogger("sink_zone_manager")
 
@@ -95,6 +101,8 @@ def decoded_buffer_seconds() -> int:
     if not isinstance(options, dict):
         raise ValueError(f"add-on options in {OPTIONS_FILE} must be a JSON object")
     seconds = options.get("airplay_decoded_buffer_seconds", 3)
+    if isinstance(seconds, str) and seconds.isdigit():
+        seconds = int(seconds)
     if type(seconds) is not int or not 1 <= seconds <= 10:
         raise ValueError("airplay_decoded_buffer_seconds must be an integer from 1 to 10")
     return seconds
@@ -425,7 +433,11 @@ class Zone:
         custom_backend_buffer = re.search(
             r"(?m)^\s*audio_backend_buffer_desired_length_in_seconds\s*=", custom_config)
         backend_buffer_setting = "" if custom_backend_buffer else (
-            "  audio_backend_buffer_desired_length_in_seconds = 0.35;")
+            "  audio_backend_buffer_desired_length_in_seconds = "
+            f"{configured_airplay_backend_buffer(OPTIONS_FILE):.2f};")
+        custom_interpolation = re.search(r"(?m)^\s*interpolation\s*=", custom_config)
+        interpolation_setting = "" if custom_interpolation else (
+            f'  interpolation = "{configured_airplay_interpolation(OPTIONS_FILE)}";')
         custom_lossless_mode = re.search(r"(?m)^\s*lossless_mode\s*=", custom_config)
         lossless_setting = "" if custom_lossless_mode else (
             f'  lossless_mode = "{configured_lossless_mode(OPTIONS_FILE)}";')
@@ -453,6 +465,7 @@ general :
   name = {json.dumps(self.display_name, ensure_ascii=False)};
   nqptp_shared_memory_interface_name = "{shm_name}";
 {lossless_setting}
+{interpolation_setting}
   port = {self.rtsp_port};
   interface = "{AIRPLAY_INTERFACE}";
   output_backend = "pulseaudio";
@@ -580,11 +593,11 @@ class Manager:
             return
         pa_sink, display = self.bt_defs.get(sink, (None, None))
         sample_source = pa_sink or remap_master_sink(sink)
-        sample_rate = sink_sample_rate(sample_source) if sample_source else None
-        if sample_rate is None:
+        detected_rate = sink_sample_rate(sample_source) if sample_source else None
+        sample_rate = configured_airplay_output_rate(OPTIONS_FILE, detected_rate)
+        if detected_rate is None and sample_rate == "auto":
             log.warning("Using Shairport Sync automatic sample-rate selection for '%s' "
                         "because its PulseAudio output sink rate could not be detected", sink)
-            sample_rate = "auto"
         zone = Zone(sink, assign_rtsp_port(sink), self._udp_base_for(sink), pa_sink,
                     display, sample_rate)
         try:

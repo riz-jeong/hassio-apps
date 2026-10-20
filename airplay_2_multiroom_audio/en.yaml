@@ -17,11 +17,50 @@ configuration:
     name: AirPlay decoded audio buffer (seconds)
     description: >-
       Buffer capacity for AirPlay 2 buffered audio streams. Defaults to 3
-      seconds as a balance of burst tolerance and buffering. Use an integer from 1 to 10;
-      larger values can use more memory. The PulseAudio backend buffer is set
-      to 0.35 seconds. Output uses the connected sink's current sample rate,
-      falling back to automatic rate selection if PulseAudio cannot report it.
+      seconds as a balance of burst tolerance and buffering. Enter a value from 1 to 10;
+      larger values can use more memory. The PulseAudio backend buffer defaults
+      to 0.35 seconds and has a separate option. Output uses the connected sink's
+      current sample rate by default, falling back to automatic selection if unavailable.
       Existing per-zone custom settings take precedence. Default: 3 seconds.
+  airplay_backend_buffer_seconds:
+    name: PulseAudio output buffer (seconds)
+    description: >-
+      Shairport Sync PulseAudio backend buffer for sink-backed AirPlay zones.
+      Smaller values reduce response latency but may crackle if the host or
+      audio device cannot keep up; larger values tolerate more scheduling
+      jitter at the cost of latency. Choices range from 0.15 to 1.00 seconds.
+      Default: 0.35 seconds.
+  airplay_output_rate:
+    name: AirPlay output sample rate
+    description: >-
+      Device keeps the current behavior and uses each selected PulseAudio
+      sink's detected sample rate (falling back to Shairport Sync automatic
+      selection if unavailable). Auto lets Shairport Sync adapt to the input.
+      Other choices force a rate and may cause PulseAudio resampling. Default: device.
+  airplay_interpolation:
+    name: AirPlay rate interpolation
+    description: >-
+      Controls how Shairport Sync adjusts frames to maintain synchronization.
+      Auto selects a method based on processor capability; vernier uses less
+      processing, while soxr can use more CPU. Applies to sink-backed zones.
+      Default: auto.
+  cast_backend_buffer_seconds:
+    name: Cast output backend buffer (seconds)
+    description: >-
+      Buffer for Shairport Sync's pipe output to Cast relays. Smaller values
+      reduce responsiveness delay but can underrun; larger values improve
+      tolerance at the cost of latency. Default: 0.10 seconds.
+  cast_decoded_buffer_seconds:
+    name: Cast decoded audio buffer (seconds)
+    description: >-
+      Capacity of Shairport Sync's decoded audio buffer for Cast relays.
+      Larger values can absorb bursts but increase memory use. Default: 0.35 seconds.
+  cast_output_rate:
+    name: Cast relay sample rate
+    description: >-
+      PCM sample rate used between Shairport Sync, FFmpeg, and Cast devices.
+      48000 Hz is the current default; 44100 Hz is provided for compatibility
+      experiments. Restart the add-on after changing this option. Default: 48000 Hz.
   log_level:
     name: Shairport Sync log level
     description: >-

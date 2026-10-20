@@ -27,8 +27,8 @@ def load_manager(addon_name, module_name):
 
 class PlaybackReliabilityTests(unittest.TestCase):
     def test_both_addons_expose_the_same_bounded_buffer_option(self):
-        for addon, version in (("airplay_2_multiroom_audio", '"1.07"'),
-                               ("airplay_2_multiroom_audio_beta", '"0.15"')):
+        for addon, version in (("airplay_2_multiroom_audio", '"1.08"'),
+                               ("airplay_2_multiroom_audio_beta", '"0.16"')):
             with self.subTest(addon=addon):
                 schema = (ROOT / addon / "config.yaml").read_text()
                 translation = (ROOT / addon / "en.yaml").read_text()
@@ -36,11 +36,15 @@ class PlaybackReliabilityTests(unittest.TestCase):
                 self.assertIn(f"version: {version}", schema)
                 self.assertIn("airplay_decoded_buffer_seconds: 3", schema)
                 self.assertIn("airplay_decoded_buffer_seconds: int(1,10)", schema)
+                self.assertIn('airplay_lossless_mode: "on"', schema)
+                self.assertIn("airplay_lossless_mode: list(on|off)", schema)
                 self.assertIn("airplay_decoded_buffer_seconds:", translation)
+                self.assertIn("airplay_lossless_mode:", translation)
                 self.assertIn("audio_decoded_buffer_desired_length_in_seconds", readme)
                 self.assertIn("Shairport Sync `5.6`", readme)
                 self.assertIn("NQPTP `1.2.9`", readme)
                 self.assertIn("connected sink's current sample rate", readme)
+                self.assertIn("lossless_mode", readme)
 
     def test_addons_pin_compatible_latest_shairport_and_nqptp_releases(self):
         dockerfiles = (
@@ -88,6 +92,7 @@ class PlaybackReliabilityTests(unittest.TestCase):
         ):
             with self.subTest(dockerfile=dockerfile):
                 self.assertIn("COPY sink_zone_manager.py", dockerfile.read_text())
+                self.assertIn("COPY shairport_config.py", dockerfile.read_text())
 
     def test_both_managers_target_the_resolved_pulse_sink(self):
         for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
@@ -104,7 +109,53 @@ class PlaybackReliabilityTests(unittest.TestCase):
                 self.assertIn('sink = "airplay_usb_dac";', config)
                 self.assertIn("output_rate = 44100;", config)
                 self.assertIn("audio_backend_buffer_desired_length_in_seconds = 0.35;", config)
+                self.assertRegex(config,
+                                 r'nqptp_shared_memory_interface_name = "/sink-[0-9a-f]{16}";')
+                self.assertIn('lossless_mode = "on";', config)
                 self.assertEqual(1, config.count('sink ='))
+
+    def test_nqptp_shared_memory_names_are_stable_valid_and_separate_per_kind(self):
+        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+            with self.subTest(addon=addon):
+                manager = load_manager(addon, f"{addon}_shm_names")
+                sink_name = manager.nqptp_shared_memory_name("sink", "usb_dac")
+                self.assertEqual(sink_name, manager.nqptp_shared_memory_name("sink", "usb_dac"))
+                self.assertNotEqual(sink_name, manager.nqptp_shared_memory_name("sink", "hdmi"))
+                self.assertNotEqual(sink_name, manager.nqptp_shared_memory_name("cast", "usb_dac"))
+                self.assertRegex(sink_name, r"^/sink-[0-9a-f]{16}$")
+
+    def test_lossless_mode_option_is_validated_and_defaults_on(self):
+        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+            with self.subTest(addon=addon), tempfile.TemporaryDirectory() as tmp:
+                manager = load_manager(addon, f"{addon}_lossless_mode")
+                options = Path(tmp) / "options.json"
+                self.assertEqual("on", manager.configured_lossless_mode(options))
+                options.write_text('{"airplay_lossless_mode":"off"}')
+                self.assertEqual("off", manager.configured_lossless_mode(options))
+                options.write_text('{"airplay_lossless_mode":"bogus"}')
+                with self.assertRaisesRegex(ValueError, "airplay_lossless_mode must be on or off"):
+                    manager.configured_lossless_mode(options)
+
+    def test_shairport_config_helper_copies_stay_in_sync(self):
+        stable = (ROOT / "airplay_2_multiroom_audio" / "shairport_config.py").read_text()
+        beta = (ROOT / "airplay_2_multiroom_audio_beta" / "shairport_config.py").read_text()
+        self.assertEqual(stable, beta)
+
+    def test_custom_lossless_mode_override_does_not_duplicate_generated_setting(self):
+        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+            with self.subTest(addon=addon), tempfile.TemporaryDirectory() as tmp:
+                manager = load_manager(addon, f"{addon}_custom_lossless_mode")
+                manager.OPTIONS_FILE = Path(tmp) / "options.json"
+                manager.OPTIONS_FILE.write_text('{"airplay_lossless_mode":"off"}')
+                manager.CONFIG_DIR = Path(tmp)
+                manager.LOG_DIR = Path(tmp)
+                zone = manager.Zone("zone", 5120, 7011, pa_sink="sink")
+                zone._ensure_custom_file()
+                zone.custom_file.write_text('lossless_mode = "on";\n')
+                zone._write_config()
+                config = zone.config_file.read_text()
+                self.assertEqual(0, config.count('lossless_mode ='))
+                self.assertIn('lossless_mode = "on";', zone.custom_file.read_text())
 
     def test_sink_rate_is_read_from_the_named_pulseaudio_sink(self):
         for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):

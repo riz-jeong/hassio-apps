@@ -58,6 +58,7 @@ from pathlib import Path
 import pychromecast
 import zeroconf as zeroconf_lib
 from airplay_name import configured_name
+from shairport_config import configured_lossless_mode, nqptp_shared_memory_name
 
 log = logging.getLogger("cast_bridge_manager")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [castbridge-manager] %(levelname)s %(message)s")
@@ -78,6 +79,7 @@ HTTP_PORT_MAP_FILE = CASTBRIDGE_DIR / "http_port_map.txt"
 PIPE_DIR = Path("/media/music/castbridge")
 
 AIRPLAY_INTERFACE = os.environ.get("AIRPLAY_INTERFACE", "")
+OPTIONS_FILE = Path(os.environ.get("CAST_OPTIONS_FILE", "/data/options.json"))
 DISCOVERY_TIMEOUT_SECONDS = int(os.environ.get("CAST_DISCOVERY_TIMEOUT", "10"))
 
 # How long to listen for existing _airplay._tcp mDNS advertisers before
@@ -259,11 +261,15 @@ def start_shairport(name: str, fifo: str, port: int, udp_port_base: int) -> subp
     log_file = LOG_DIR / f"{name}-ap2.log"
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     receiver_name = configured_name(name)
+    lossless_mode = configured_lossless_mode(OPTIONS_FILE)
+    nqptp_name = nqptp_shared_memory_name("cast", name)
 
     config_file.write_text(f"""\
 general :
 {{
   name = {json.dumps(receiver_name, ensure_ascii=False)};
+  nqptp_shared_memory_interface_name = "{nqptp_name}";
+  lossless_mode = "{lossless_mode}";
   port = {port};
   interface = "{AIRPLAY_INTERFACE}";
   output_backend = "pipe";

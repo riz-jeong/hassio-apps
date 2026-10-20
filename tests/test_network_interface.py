@@ -402,7 +402,9 @@ class NetworkInterfaceTests(unittest.TestCase):
                 manager.CONFIG_DIR.mkdir()
                 fifo = str(manager.PIPE_DIR / "cast.pipe")
                 options_file = temp / "options.json"
-                options_file.write_text('{"airplay_name":"JCH Hi-Fi"}')
+                options_file.write_text(
+                    '{"airplay_name":"JCH Hi-Fi","airplay_lossless_mode":"off"}')
+                manager.OPTIONS_FILE = options_file
                 old_options_file = os.environ.get("AIRPLAY_OPTIONS_FILE")
                 os.environ["AIRPLAY_OPTIONS_FILE"] = str(options_file)
                 started = []
@@ -423,6 +425,10 @@ class NetworkInterfaceTests(unittest.TestCase):
                 self.assertIn('interface = "eth1";', generated)
                 self.assertIn('mdns_backend = "avahi";', generated)
                 self.assertIn('name = "JCH Hi-Fi";', generated)
+                self.assertIn('lossless_mode = "off";', generated)
+                self.assertRegex(
+                    generated,
+                    r'nqptp_shared_memory_interface_name = "/cast-[0-9a-f]{16}";')
                 self.assertIn("-a", started[0])
                 self.assertEqual("JCH Hi-Fi", started[0][started[0].index("-a") + 1])
                 self.assertEqual(1, generated.count("interface ="))

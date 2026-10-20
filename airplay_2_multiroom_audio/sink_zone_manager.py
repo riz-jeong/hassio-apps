@@ -58,6 +58,7 @@ import threading
 import time
 from pathlib import Path
 from airplay_name import configured_name
+from shairport_config import configured_lossless_mode, nqptp_shared_memory_name
 
 log = logging.getLogger("sink_zone_manager")
 
@@ -392,6 +393,9 @@ class Zone:
             r"(?m)^\s*audio_backend_buffer_desired_length_in_seconds\s*=", custom_config)
         backend_buffer_setting = "" if custom_backend_buffer else (
             "  audio_backend_buffer_desired_length_in_seconds = 0.35;")
+        custom_lossless_mode = re.search(r"(?m)^\s*lossless_mode\s*=", custom_config)
+        lossless_setting = "" if custom_lossless_mode else (
+            f'  lossless_mode = "{configured_lossless_mode(OPTIONS_FILE)}";')
         output_rate_setting = (str(self.output_rate) if type(self.output_rate) is int
                                else json.dumps(self.output_rate))
         if re.search(r"(?m)^\s*interface\s*=", custom_config):
@@ -404,10 +408,18 @@ class Zone:
                 f"{self.custom_file} sets name, which conflicts with airplay_name; "
                 "remove the name setting"
             )
+        if re.search(r"(?m)^\s*nqptp_shared_memory_interface_name\s*=", custom_config):
+            raise ValueError(
+                f"{self.custom_file} sets nqptp_shared_memory_interface_name, which must "
+                "be unique per AirPlay instance; remove the setting"
+            )
+        shm_name = nqptp_shared_memory_name("sink", self.sink)
         self.config_file.write_text(f"""\
 general :
 {{
   name = {json.dumps(self.display_name, ensure_ascii=False)};
+  nqptp_shared_memory_interface_name = "{shm_name}";
+{lossless_setting}
   port = {self.rtsp_port};
   interface = "{AIRPLAY_INTERFACE}";
   output_backend = "pulseaudio";

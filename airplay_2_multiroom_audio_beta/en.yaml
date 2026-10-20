@@ -26,3 +26,10 @@ configuration:
       Verbosity of the per-zone shairport-sync logs. v is the least detailed,
       vv (the default) adds more, and vvv is the most detailed and grows the
       logs fastest. Restart the add-on after changing it.
+
+  airplay_lossless_mode:
+    name: AirPlay lossless audio
+    description: >-
+      Keep AirPlay lossless audio enabled (on, default), or turn it off to
+      avoid audible glitches some senders can produce while changing between
+      lossy and lossless streams. Restart the add-on after changing this option.

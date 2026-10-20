@@ -245,6 +245,48 @@ def remap_modules():
     return mods
 
 
+def remap_master_sink(sink_name):
+    """Return the physical PulseAudio master for a remap sink, if known."""
+    modules = remap_modules()
+    if modules is None:
+        return None
+    for _, arguments in modules:
+        remap_name = re.search(r"(?:^|\s)sink_name=(\S+)", arguments)
+        master_name = re.search(r"(?:^|\s)master=(\S+)", arguments)
+        if remap_name and remap_name.group(1) == sink_name and master_name:
+            return master_name.group(1)
+    return None
+
+
+def sink_sample_rate(sink_name):
+    """Read the current negotiated rate for a named PulseAudio sink."""
+    try:
+        result = subprocess.run(["pactl", "list", "sinks"], capture_output=True,
+                                text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log.warning("Cannot detect sample rate for sink '%s': %s", sink_name, exc)
+        return None
+    if result.returncode != 0:
+        log.warning("Cannot detect sample rate for sink '%s': pactl exited %d: %s",
+                    sink_name, result.returncode, result.stderr.strip())
+        return None
+
+    current_name = None
+    for line in result.stdout.splitlines():
+        if line.startswith("Sink #"):
+            current_name = None
+        name = re.match(r"\s*Name:\s*(\S+)", line)
+        if name:
+            current_name = name.group(1)
+            continue
+        if current_name == sink_name:
+            spec = re.match(r"\s*Sample Specification:.*?\b(\d{4,6})Hz\b", line)
+            if spec:
+                return int(spec.group(1))
+    log.warning("PulseAudio did not report a sample rate for sink '%s'", sink_name)
+    return None
+
+
 def bounce_and_recreate_remaps(wanted):
     """After a PulseAudio restart a master sink can look fine (IDLE) while its
     ALSA device never reopens, so nothing is audible. Same fix as the addon's
@@ -305,12 +347,15 @@ def zone_sinks(names):
 # -- one zone -----------------------------------------------------------
 class Zone:
     def __init__(self, sink: str, rtsp_port: int, udp_base: int,
-                 pa_sink: str = None, display_name: str = None):
+                 pa_sink: str = None, display_name: str = None,
+                 output_rate="auto"):
         # `sink` is the zone's key (file names, port_map.txt). It is the
         # PulseAudio sink name for a remap sink; a Bluetooth zone is keyed by
         # its alias instead and names the real sink in `pa_sink`.
         self.sink = sink
         self.pa_sink = pa_sink or sink
+        self.output_rate = (output_rate if type(output_rate) is int
+                            and 8000 <= output_rate <= 384000 else "auto")
         self.display_name = configured_name(display_name or sink.replace("_", " "))
         self.rtsp_port = rtsp_port
         self.udp_base = udp_base
@@ -347,6 +392,8 @@ class Zone:
             r"(?m)^\s*audio_backend_buffer_desired_length_in_seconds\s*=", custom_config)
         backend_buffer_setting = "" if custom_backend_buffer else (
             "  audio_backend_buffer_desired_length_in_seconds = 0.35;")
+        output_rate_setting = (str(self.output_rate) if type(self.output_rate) is int
+                               else json.dumps(self.output_rate))
         if re.search(r"(?m)^\s*interface\s*=", custom_config):
             raise ValueError(
                 f"{self.custom_file} sets interface, which conflicts with the selected "
@@ -382,13 +429,17 @@ diagnostics :
 pulseaudio :
 {{
   sink = "{self.pa_sink}";
-  output_rate = 48000;
+  output_rate = {output_rate_setting};
   application_name = "Shairport Sync";
 }};
 """)
         selected_buffer = "custom" if custom_buffer else f"{buffer_seconds}s"
         log.info("AirPlay zone '%s' uses decoded audio buffer: %s",
                  self.display_name, selected_buffer)
+        rate_label = (f"{self.output_rate} Hz" if type(self.output_rate) is int
+                      else "automatic rate selection")
+        log.info("AirPlay zone '%s' uses PulseAudio sink '%s' at %s",
+                 self.display_name, self.pa_sink, rate_label)
 
     def start(self, fresh: bool = True):
         """fresh=True truncates the zone log (a new session of the zone);
@@ -480,7 +531,14 @@ class Manager:
         if re.search(r"\s", sink):
             log.warning("Skipping sink '%s': whitespace in the name breaks port_map.txt", sink)
             return
-        zone = Zone(sink, assign_rtsp_port(sink), self._udp_base_for(sink))
+        master_sink = remap_master_sink(sink)
+        sample_rate = sink_sample_rate(master_sink) if master_sink else None
+        if sample_rate is None:
+            log.warning("Using Shairport Sync automatic sample-rate selection for '%s' "
+                        "because its PulseAudio output sink rate could not be detected", sink)
+            sample_rate = "auto"
+        zone = Zone(sink, assign_rtsp_port(sink), self._udp_base_for(sink),
+                    output_rate=sample_rate)
         try:
             zone.start(fresh=True)
         except ValueError as exc:

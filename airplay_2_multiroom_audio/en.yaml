@@ -17,5 +17,6 @@ configuration:
       Buffer capacity for AirPlay 2 buffered audio streams. Defaults to 3
       seconds as a balance of burst tolerance and buffering. Use an integer from 1 to 10;
       larger values can use more memory. The PulseAudio backend buffer is set
-      to 0.35 seconds and output stays at 48 kHz across track transitions.
+      to 0.35 seconds. Output uses the connected sink's current sample rate,
+      falling back to automatic rate selection if PulseAudio cannot report it.
       Existing per-zone custom settings take precedence.

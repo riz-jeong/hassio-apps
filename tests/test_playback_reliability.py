@@ -40,7 +40,7 @@ class PlaybackReliabilityTests(unittest.TestCase):
                 self.assertIn("audio_decoded_buffer_desired_length_in_seconds", readme)
                 self.assertIn("Shairport Sync `5.6`", readme)
                 self.assertIn("NQPTP `1.2.9`", readme)
-                self.assertIn("48 kHz", readme)
+                self.assertIn("connected sink's current sample rate", readme)
 
     def test_addons_pin_compatible_latest_shairport_and_nqptp_releases(self):
         dockerfiles = (
@@ -96,15 +96,78 @@ class PlaybackReliabilityTests(unittest.TestCase):
                 manager.CONFIG_DIR = Path(tmp)
                 manager.LOG_DIR = Path(tmp)
                 zone = manager.Zone("internal_zone", 5120, 7011,
-                                    pa_sink="airplay_usb_dac")
+                                    pa_sink="airplay_usb_dac", output_rate=44100)
                 zone._ensure_custom_file()
                 zone._write_config()
                 config = zone.config_file.read_text()
                 self.assertIn('output_backend = "pulseaudio";', config)
                 self.assertIn('sink = "airplay_usb_dac";', config)
-                self.assertIn("output_rate = 48000;", config)
+                self.assertIn("output_rate = 44100;", config)
                 self.assertIn("audio_backend_buffer_desired_length_in_seconds = 0.35;", config)
                 self.assertEqual(1, config.count('sink ='))
+
+    def test_sink_rate_is_read_from_the_named_pulseaudio_sink(self):
+        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+            with self.subTest(addon=addon):
+                manager = load_manager(addon, f"{addon}_sample_rate")
+                output = """Sink #2
+    Name: physical_usb_dac
+    Sample Specification: s24le 2ch 44100Hz
+Sink #3
+    Name: unrelated_sink
+    Sample Specification: s16le 2ch 48000Hz
+"""
+                result = SimpleNamespace(returncode=0, stdout=output, stderr="")
+                with patch.object(manager.subprocess, "run", return_value=result):
+                    self.assertEqual(44100, manager.sink_sample_rate("physical_usb_dac"))
+                    self.assertEqual(48000, manager.sink_sample_rate("unrelated_sink"))
+
+    def test_remap_zones_resolve_their_physical_master_sink(self):
+        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+            with self.subTest(addon=addon):
+                manager = load_manager(addon, f"{addon}_master_sink")
+                with patch.object(manager, "remap_modules", return_value=[
+                        ("9", "sink_name=airplay_zone master=physical_usb_dac")]):
+                    self.assertEqual("physical_usb_dac",
+                                     manager.remap_master_sink("airplay_zone"))
+
+    def test_sink_managers_propagate_detected_master_rate_to_shairport(self):
+        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+            with self.subTest(addon=addon):
+                manager = load_manager(addon, f"{addon}_propagate_sample_rate")
+                instance = manager.Manager()
+                zone = SimpleNamespace(start=unittest.mock.Mock())
+                with patch.object(manager, "remap_master_sink",
+                                  return_value="physical_usb_dac"), \
+                     patch.object(manager, "sink_sample_rate", return_value=44100), \
+                     patch.object(manager, "assign_rtsp_port", return_value=5120), \
+                     patch.object(manager, "Zone", return_value=zone) as zone_factory:
+                    instance._start_zone("airplay_usb_dac")
+                if addon.endswith("_beta"):
+                    self.assertEqual(44100, zone_factory.call_args.args[5])
+                else:
+                    self.assertEqual(44100,
+                                     zone_factory.call_args.kwargs["output_rate"])
+                zone.start.assert_called_once_with(fresh=True)
+
+    def test_missing_pactl_uses_automatic_rate_fallback(self):
+        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+            with self.subTest(addon=addon):
+                manager = load_manager(addon, f"{addon}_missing_pactl_rate")
+                with patch.object(manager.subprocess, "run", side_effect=FileNotFoundError):
+                    self.assertIsNone(manager.sink_sample_rate("physical_usb_dac"))
+
+    def test_generated_zone_uses_auto_when_sink_sample_rate_is_unavailable(self):
+        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+            with self.subTest(addon=addon), tempfile.TemporaryDirectory() as tmp:
+                manager = load_manager(addon, f"{addon}_sample_rate_auto")
+                manager.CONFIG_DIR = Path(tmp)
+                manager.LOG_DIR = Path(tmp)
+                zone = manager.Zone("airplay_usb_dac", 5120, 7011,
+                                    pa_sink="airplay_usb_dac")
+                zone._ensure_custom_file()
+                zone._write_config()
+                self.assertIn('output_rate = "auto";', zone.config_file.read_text())
 
     def test_buffered_audio_depth_defaults_to_three_seconds_and_is_configurable(self):
         for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):

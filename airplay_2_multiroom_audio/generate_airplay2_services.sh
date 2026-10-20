@@ -34,6 +34,14 @@ echo "# AirPlay 2 services generated on $(date)" > "$log_file"
     nqptp -V
 } >> "$log_file" 2>&1
 
+# This script runs once per container start (S6_STAGE2_HOOK), before any
+# service does, so it is the place to start the long-running managers' logs
+# fresh. Their run scripts append (>>) so that an s6 restart of a crashed
+# manager keeps the earlier output.
+mkdir -p /config/shairport-sync/logs /config/cast-bridge/logs
+: > /config/shairport-sync/logs/sink_zone_manager.log
+: > /config/cast-bridge/logs/cast_bridge_manager.log
+
 BASE_DIR="/etc/s6-overlay/s6-rc.d"
 CONTENTS_DIR="${BASE_DIR}/user/contents.d"
 CONFIG_DIR="/config/shairport-sync/config"
@@ -231,6 +239,26 @@ while read -r remap_sink; do
     pactl load-module module-remap-sink $remap_args >> "$log_file" 2>&1
 done < <(pactl list sinks short | awk '/module-remap-sink/ {print $2}')
 
+# --- Sink-backed zones are no longer generated here ---------------------
+# This script used to create one s6 service directory per remap sink. s6-rc
+# compiles its service database once, at container start, so a sink that
+# appeared or disappeared later (a Bluetooth speaker reconnecting, a USB
+# DAC being replugged) needed a full addon restart. sink_zone_manager.py
+# (started below as the "airplay2-sink-zone-manager" service) now owns
+# those zones the way cast_bridge_manager.py owns the Cast ones: it
+# starts one shairport-sync per module-remap-sink, restarts it if it
+# dies, and starts/stops zones as sinks come and go.
+#
+# The persistent name -> port map moved there too (same port_map.txt,
+# same "name port" format, shared with cast_bridge_manager.py under a
+# flock). Keeping each zone's RTSP port stable is what keeps its AirPlay 2
+# device ID, and therefore its Music Assistant player and settings,
+# stable: shairport-sync derives the ID from the zone name and its port.
+#
+# Everything ABOVE this point still runs here, once, before any service
+# starts: the master-sink bounce, remap sink recreate and duplicate
+# cleanup, so the manager always sees remap sinks in their fresh state.
+
 # --- One-time, container-wide services: dbus -> avahi -> nqptp -> castbridge-manager ---
 DBUS_SERVICE="${BASE_DIR}/airplay2-dbus"
 if [ ! -d "$DBUS_SERVICE" ]; then
@@ -331,11 +359,7 @@ exec python3 /usr/sbin/cast_bridge_manager.py >> /config/cast-bridge/logs/cast_b
 EOF
 chmod +x "${CASTBRIDGE_MANAGER_SERVICE}/run"
 
-# Sink-backed receiver processes are supervised by one manager so sink
-# removal/reappearance and PulseAudio reconnects cannot leave stale
-# Shairport Sync connections behind. Stable intentionally keeps its
-# existing remap-sink-only discovery behavior (no standalone Bluetooth
-# zones); Beta enables its additional Bluetooth zone support.
+# One manager for every PulseAudio-sink zone (see the comment above).
 SINK_ZONE_MANAGER_SERVICE="${BASE_DIR}/airplay2-sink-zone-manager"
 if [ ! -d "$SINK_ZONE_MANAGER_SERVICE" ]; then
     mkdir -p "$SINK_ZONE_MANAGER_SERVICE" "${SINK_ZONE_MANAGER_SERVICE}/dependencies.d"
@@ -345,6 +369,7 @@ if [ ! -d "$SINK_ZONE_MANAGER_SERVICE" ]; then
     touch "${SINK_ZONE_MANAGER_SERVICE}/dependencies.d/airplay2-nqptp"
     touch "${CONTENTS_DIR}/airplay2-sink-zone-manager"
 fi
+# Unquoted heredoc on purpose: AIRPLAY_INTERFACE is baked in here.
 cat > "${SINK_ZONE_MANAGER_SERVICE}/run" <<EOF
 #!/usr/bin/with-contenv bashio
 export AIRPLAY_INTERFACE="${AIRPLAY_INTERFACE}"

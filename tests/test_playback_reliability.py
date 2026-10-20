@@ -26,9 +26,8 @@ def load_manager(addon_name, module_name):
 
 
 class PlaybackReliabilityTests(unittest.TestCase):
-    def test_both_addons_expose_the_same_bounded_buffer_option(self):
-        for addon, version in (("airplay_2_multiroom_audio", '"1.08"'),
-                               ("airplay_2_multiroom_audio_beta", '"0.16"')):
+    def test_addon_exposes_the_bounded_buffer_option(self):
+        for addon, version in (("airplay_2_multiroom_audio", '"1.10"')):
             with self.subTest(addon=addon):
                 schema = (ROOT / addon / "config.yaml").read_text()
                 translation = (ROOT / addon / "en.yaml").read_text()
@@ -46,56 +45,65 @@ class PlaybackReliabilityTests(unittest.TestCase):
                 self.assertIn("connected sink's current sample rate", readme)
                 self.assertIn("lossless_mode", readme)
 
-    def test_addons_pin_compatible_latest_shairport_and_nqptp_releases(self):
-        dockerfiles = (
-            ROOT / "airplay_2_multiroom_audio" / "Dockerfile",
-            ROOT / "airplay_2_multiroom_audio_beta" / "Dockerfile",
-            ROOT / "airplay_2_multiroom_audio_beta" / "Dockerfile.txt",
-        )
-        for dockerfile in dockerfiles:
-            with self.subTest(dockerfile=dockerfile):
-                content = dockerfile.read_text()
-                self.assertIn("ARG SHAIRPORT_SYNC_VERSION=5.6", content)
-                self.assertIn("ARG NQPTP_VERSION=1.2.9", content)
-                self.assertIn('git checkout --detach "${NQPTP_VERSION}"', content)
-                self.assertIn('git checkout --detach "${SHAIRPORT_SYNC_VERSION}"', content)
-                self.assertIn("Shared Memory Interface Version: smi11.", content)
-                self.assertNotIn("git switch development", content)
-        self.assertEqual(dockerfiles[1].read_text(), dockerfiles[2].read_text())
+    def test_addon_pins_compatible_shairport_and_nqptp_releases(self):
+        dockerfile = ROOT / "airplay_2_multiroom_audio" / "Dockerfile"
+        content = dockerfile.read_text()
+        self.assertIn("ARG SHAIRPORT_SYNC_VERSION=5.6", content)
+        self.assertIn("ARG NQPTP_VERSION=1.2.9", content)
+        self.assertIn('git checkout --detach "${NQPTP_VERSION}"', content)
+        self.assertIn('git checkout --detach "${SHAIRPORT_SYNC_VERSION}"', content)
+        self.assertIn("Shared Memory Interface Version: smi11.", content)
+        self.assertNotIn("git switch development", content)
 
     def test_startup_logs_shairport_and_nqptp_build_versions(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon):
                 script = (ROOT / addon / "generate_airplay2_services.sh").read_text()
                 self.assertIn('shairport-sync -V', script)
                 self.assertIn('nqptp -V', script)
 
     def test_cast_pipe_buffer_remains_separate_from_sink_zone_buffer(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon):
                 manager = (ROOT / addon / "cast_bridge_manager.py").read_text()
                 self.assertIn("audio_backend_buffer_desired_length_in_seconds = 0.1;", manager)
                 self.assertIn("audio_decoded_buffer_desired_length_in_seconds = 0.35;", manager)
 
-    def test_stable_starts_the_sink_zone_manager_instead_of_static_zone_services(self):
+    def test_canonical_addon_starts_the_sink_zone_manager(self):
         script = (ROOT / "airplay_2_multiroom_audio" /
                   "generate_airplay2_services.sh").read_text()
         self.assertIn("airplay2-sink-zone-manager", script)
         self.assertIn("sink_zone_manager.py", script)
         self.assertNotIn('touch "${CONTENTS_DIR}/airplay2-${friendly_name}"', script)
 
-    def test_each_relevant_container_build_copies_its_sink_manager(self):
-        for dockerfile in (
-            ROOT / "airplay_2_multiroom_audio" / "Dockerfile",
-            ROOT / "airplay_2_multiroom_audio_beta" / "Dockerfile",
-            ROOT / "airplay_2_multiroom_audio_beta" / "Dockerfile.txt",
-        ):
+    def test_manager_discovers_standalone_bluetooth_zones_and_prefers_remaps(self):
+        manager = load_manager("airplay_2_multiroom_audio", "canonical_bluetooth_zones")
+        instance = manager.Manager()
+        standalone = {"bluez_output.AA_BB.1": "Kitchen Speaker"}
+        with patch.object(manager, "remap_modules", return_value=[]), \
+             patch.object(manager, "bluetooth_sinks", return_value=standalone):
+            self.assertEqual(
+                ["airplay_usb_dac", "Kitchen_Speaker"],
+                instance._desired(["airplay_usb_dac"]),
+            )
+
+        remapped = {"bluez_output.AA_BB.1": "Kitchen Speaker"}
+        modules = [("9", "sink_name=kitchen_remap master=bluez_output.AA_BB.1")]
+        with patch.object(manager, "remap_modules", return_value=modules), \
+             patch.object(manager, "bluetooth_sinks", return_value=remapped):
+            self.assertEqual(
+                ["kitchen_remap"],
+                instance._desired(["kitchen_remap"]),
+            )
+
+    def test_container_build_copies_its_sink_manager(self):
+        for dockerfile in (ROOT / "airplay_2_multiroom_audio" / "Dockerfile",):
             with self.subTest(dockerfile=dockerfile):
                 self.assertIn("COPY sink_zone_manager.py", dockerfile.read_text())
                 self.assertIn("COPY shairport_config.py", dockerfile.read_text())
 
-    def test_both_managers_target_the_resolved_pulse_sink(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+    def test_manager_targets_the_resolved_pulse_sink(self):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon), tempfile.TemporaryDirectory() as tmp:
                 manager = load_manager(addon, f"{addon}_sink_manager")
                 manager.CONFIG_DIR = Path(tmp)
@@ -115,7 +123,7 @@ class PlaybackReliabilityTests(unittest.TestCase):
                 self.assertEqual(1, config.count('sink ='))
 
     def test_nqptp_shared_memory_names_are_stable_valid_and_separate_per_kind(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon):
                 manager = load_manager(addon, f"{addon}_shm_names")
                 sink_name = manager.nqptp_shared_memory_name("sink", "usb_dac")
@@ -125,7 +133,7 @@ class PlaybackReliabilityTests(unittest.TestCase):
                 self.assertRegex(sink_name, r"^/sink-[0-9a-f]{16}$")
 
     def test_lossless_mode_option_is_validated_and_defaults_on(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon), tempfile.TemporaryDirectory() as tmp:
                 manager = load_manager(addon, f"{addon}_lossless_mode")
                 options = Path(tmp) / "options.json"
@@ -136,13 +144,8 @@ class PlaybackReliabilityTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "airplay_lossless_mode must be on or off"):
                     manager.configured_lossless_mode(options)
 
-    def test_shairport_config_helper_copies_stay_in_sync(self):
-        stable = (ROOT / "airplay_2_multiroom_audio" / "shairport_config.py").read_text()
-        beta = (ROOT / "airplay_2_multiroom_audio_beta" / "shairport_config.py").read_text()
-        self.assertEqual(stable, beta)
-
     def test_custom_lossless_mode_override_does_not_duplicate_generated_setting(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon), tempfile.TemporaryDirectory() as tmp:
                 manager = load_manager(addon, f"{addon}_custom_lossless_mode")
                 manager.OPTIONS_FILE = Path(tmp) / "options.json"
@@ -158,7 +161,7 @@ class PlaybackReliabilityTests(unittest.TestCase):
                 self.assertIn('lossless_mode = "on";', zone.custom_file.read_text())
 
     def test_sink_rate_is_read_from_the_named_pulseaudio_sink(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon):
                 manager = load_manager(addon, f"{addon}_sample_rate")
                 output = """Sink #2
@@ -174,7 +177,7 @@ Sink #3
                     self.assertEqual(48000, manager.sink_sample_rate("unrelated_sink"))
 
     def test_remap_zones_resolve_their_physical_master_sink(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon):
                 manager = load_manager(addon, f"{addon}_master_sink")
                 with patch.object(manager, "remap_modules", return_value=[
@@ -182,8 +185,8 @@ Sink #3
                     self.assertEqual("physical_usb_dac",
                                      manager.remap_master_sink("airplay_zone"))
 
-    def test_sink_managers_propagate_detected_master_rate_to_shairport(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+    def test_sink_manager_propagates_detected_master_rate_to_shairport(self):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon):
                 manager = load_manager(addon, f"{addon}_propagate_sample_rate")
                 instance = manager.Manager()
@@ -194,22 +197,18 @@ Sink #3
                      patch.object(manager, "assign_rtsp_port", return_value=5120), \
                      patch.object(manager, "Zone", return_value=zone) as zone_factory:
                     instance._start_zone("airplay_usb_dac")
-                if addon.endswith("_beta"):
-                    self.assertEqual(44100, zone_factory.call_args.args[5])
-                else:
-                    self.assertEqual(44100,
-                                     zone_factory.call_args.kwargs["output_rate"])
+                self.assertEqual(44100, zone_factory.call_args.args[5])
                 zone.start.assert_called_once_with(fresh=True)
 
     def test_missing_pactl_uses_automatic_rate_fallback(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon):
                 manager = load_manager(addon, f"{addon}_missing_pactl_rate")
                 with patch.object(manager.subprocess, "run", side_effect=FileNotFoundError):
                     self.assertIsNone(manager.sink_sample_rate("physical_usb_dac"))
 
     def test_generated_zone_uses_auto_when_sink_sample_rate_is_unavailable(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon), tempfile.TemporaryDirectory() as tmp:
                 manager = load_manager(addon, f"{addon}_sample_rate_auto")
                 manager.CONFIG_DIR = Path(tmp)
@@ -221,7 +220,7 @@ Sink #3
                 self.assertIn('output_rate = "auto";', zone.config_file.read_text())
 
     def test_buffered_audio_depth_defaults_to_three_seconds_and_is_configurable(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon), tempfile.TemporaryDirectory() as tmp:
                 manager = load_manager(addon, f"{addon}_audio_buffer")
                 manager.OPTIONS_FILE = Path(tmp) / "options.json"
@@ -244,7 +243,7 @@ Sink #3
                     "audio_decoded_buffer_desired_length_in_seconds ="))
 
     def test_invalid_buffered_audio_depth_fails_clearly(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             for value in (0, 11, True, "5"):
                 with self.subTest(addon=addon, value=value), tempfile.TemporaryDirectory() as tmp:
                     manager = load_manager(addon, f"{addon}_invalid_audio_buffer_{value}")
@@ -262,7 +261,7 @@ Sink #3
                         zone._write_config()
 
     def test_custom_buffer_setting_takes_precedence_without_duplicate_directive(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon), tempfile.TemporaryDirectory() as tmp:
                 manager = load_manager(addon, f"{addon}_custom_audio_buffer")
                 manager.OPTIONS_FILE = Path(tmp) / "options.json"
@@ -280,7 +279,7 @@ Sink #3
                               zone.custom_file.read_text())
 
     def test_custom_backend_buffer_setting_takes_precedence(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon), tempfile.TemporaryDirectory() as tmp:
                 manager = load_manager(addon, f"{addon}_custom_backend_buffer")
                 manager.CONFIG_DIR = Path(tmp)
@@ -298,7 +297,7 @@ Sink #3
                               zone.custom_file.read_text())
 
     def test_generated_configs_preserve_custom_settings_without_forcing_mute(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon), tempfile.TemporaryDirectory() as tmp:
                 manager = load_manager(addon, f"{addon}_custom_config")
                 manager.CONFIG_DIR = Path(tmp)
@@ -316,7 +315,7 @@ Sink #3
                 self.assertNotIn("mute_using_playback_control", generated)
 
     def test_sink_query_failure_does_not_remove_running_zone(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon):
                 manager = load_manager(addon, f"{addon}_manager_query_failure")
                 existing = SimpleNamespace(stop=unittest.mock.Mock())
@@ -329,7 +328,7 @@ Sink #3
                 existing.stop.assert_not_called()
 
     def test_pulseaudio_restart_restarts_a_zone_without_changing_its_sink(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon):
                 manager = load_manager(addon, f"{addon}_manager_restart")
                 old_zone = SimpleNamespace(stop=unittest.mock.Mock())
@@ -355,7 +354,7 @@ Sink #3
                 self.assertIs(instance.zones["airplay_usb_dac"], new_zone)
 
     def test_recovery_does_not_reuse_a_sink_list_that_disappeared(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             for recovered in ([], None):
                 with self.subTest(addon=addon, recovered=recovered):
                     manager = load_manager(addon, f"{addon}_manager_missing_sink_{recovered is None}")
@@ -380,7 +379,7 @@ Sink #3
                     self.assertEqual({}, instance.zones)
 
     def test_zone_returns_after_sink_reappears_after_recovery(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon):
                 manager = load_manager(addon, f"{addon}_manager_sink_returns")
                 old_zone = SimpleNamespace(stop=unittest.mock.Mock())
@@ -408,12 +407,6 @@ Sink #3
                 old_zone.stop.assert_called_once()
                 self.assertIs(instance.zones["airplay_usb_dac"], new_zone)
 
-    def test_stable_manager_keeps_remap_sinks_as_its_only_zone_type(self):
-        manager = load_manager("airplay_2_multiroom_audio",
-                               "stable_sink_manager_no_bluetooth")
-        instance = manager.Manager()
-        self.assertEqual(["airplay_usb_dac"], instance._desired(["airplay_usb_dac"]))
-        self.assertFalse(hasattr(manager, "bluetooth_sinks"))
 
 
 if __name__ == "__main__":

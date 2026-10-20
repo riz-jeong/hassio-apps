@@ -28,7 +28,7 @@ class AirplayNameTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_auto_preserves_the_existing_per_receiver_name(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon):
                 self.options.write_text(json.dumps({"airplay_name": "auto"}))
                 resolver = load_resolver(addon)
@@ -65,10 +65,6 @@ class AirplayNameTests(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("airplay_name must be 'auto' or a non-empty receiver name", result.stderr)
 
-    def test_name_resolver_copies_stay_in_sync(self):
-        stable = (ROOT / "airplay_2_multiroom_audio" / "airplay_name.py").read_bytes()
-        beta = (ROOT / "airplay_2_multiroom_audio_beta" / "airplay_name.py").read_bytes()
-        self.assertEqual(stable, beta)
 
 
 if __name__ == "__main__":

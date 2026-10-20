@@ -29,11 +29,13 @@ What it does
         Assistant player and settings, stay the same
   * Restarts a shairport-sync that exits unexpectedly, with backoff.
 
-Stable creates zones only for remap sinks. Beta additionally creates a
-zone for a connected Bluetooth A2DP sink when no remap sink sits on top
-of it. After a PulseAudio restart (`ha audio restart`) the manager
-bounces master sinks, reloads remap modules and restarts zones, because
-old shairport-sync processes can hold dead connections to the old server.
+Bluetooth speakers need no remap sink: every connected Bluetooth A2DP
+sink gets a zone of its own, named after the speaker's alias (the sink's
+Description), unless a remap sink already sits on top of it, in which case
+that remap sink is the zone. After a PulseAudio restart (`ha audio
+restart`) the manager bounces the master sinks, reloads the remap modules
+and restarts every zone, because the old shairport-sync processes hold
+dead connections to the old server.
 
 What stays in generate_airplay2_services.sh: the one-time dbus / avahi /
 nqptp / cast-bridge services and, before any of this starts, the master
@@ -288,6 +290,37 @@ def sink_sample_rate(sink_name):
     return None
 
 
+BT_SINK_RE = re.compile(r"^bluez_(sink|output)\.")
+BT_NOT_A2DP_RE = re.compile(r"headset|hsp|hfp|handsfree", re.I)
+
+
+def bluetooth_sinks():
+    """{pulse sink name: Description (the speaker's alias)} for connected
+    Bluetooth A2DP output sinks, or None if pactl could not be queried."""
+    try:
+        res = subprocess.run(["pactl", "list", "sinks"], capture_output=True,
+                             text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        log.warning("pactl list sinks failed: %s", e)
+        return None
+    if res.returncode != 0:
+        log.warning("pactl list sinks exited %d: %s", res.returncode, res.stderr.strip())
+        return None
+    found, name = {}, None
+    for line in res.stdout.splitlines():
+        if line.startswith("Sink #"):
+            name = None
+        m = re.match(r"\s*Name:\s*(\S+)", line)
+        if m:
+            name = m.group(1)
+            continue
+        m = re.match(r"\s*Description:\s*(.+?)\s*$", line)
+        if m and name and BT_SINK_RE.match(name) and not BT_NOT_A2DP_RE.search(name):
+            found[name] = m.group(1)
+            name = None
+    return found
+
+
 def bounce_and_recreate_remaps(wanted):
     """After a PulseAudio restart a master sink can look fine (IDLE) while its
     ALSA device never reopens, so nothing is audible. Same fix as the addon's
@@ -524,6 +557,8 @@ class Manager:
         self.zones = {}        # sink name -> Zone (running)
         self.udp_bases = {}    # sink name -> udp base, kept across stop/start
         self.booted = False
+        self.bt_defs = {}      # zone key -> (pulse sink, display name), Bluetooth zones
+        self.bt_noted = set()
         self.stop_event = threading.Event()
         self.change_event = threading.Event()
         self.last_sink_event = 0.0
@@ -543,14 +578,15 @@ class Manager:
         if re.search(r"\s", sink):
             log.warning("Skipping sink '%s': whitespace in the name breaks port_map.txt", sink)
             return
-        master_sink = remap_master_sink(sink)
-        sample_rate = sink_sample_rate(master_sink) if master_sink else None
+        pa_sink, display = self.bt_defs.get(sink, (None, None))
+        sample_source = pa_sink or remap_master_sink(sink)
+        sample_rate = sink_sample_rate(sample_source) if sample_source else None
         if sample_rate is None:
             log.warning("Using Shairport Sync automatic sample-rate selection for '%s' "
                         "because its PulseAudio output sink rate could not be detected", sink)
             sample_rate = "auto"
-        zone = Zone(sink, assign_rtsp_port(sink), self._udp_base_for(sink),
-                    output_rate=sample_rate)
+        zone = Zone(sink, assign_rtsp_port(sink), self._udp_base_for(sink), pa_sink,
+                    display, sample_rate)
         try:
             zone.start(fresh=True)
         except ValueError as exc:
@@ -559,8 +595,35 @@ class Manager:
         self.zones[sink] = zone
 
     def _desired(self, names):
-        """Zone keys that should be running: remap sinks only in Stable."""
-        return zone_sinks(names)
+        """Zone keys that should be running: the remap sinks, plus one zone per
+        connected Bluetooth sink that has no remap sink on top of it."""
+        remap = zone_sinks(names)
+        mods = remap_modules()
+        bt = bluetooth_sinks()
+        if mods is None or bt is None:
+            # Cannot tell; do not tear down Bluetooth zones over a pactl hiccup.
+            return remap + [k for k in self.zones if k in self.bt_defs and k not in remap]
+        masters = set()
+        for _, args in mods:
+            m = re.search(r"master=(\S+)", args)
+            if m:
+                masters.add(m.group(1))
+        keys = []
+        for pa_name, alias in bt.items():
+            key = re.sub(r"[^A-Za-z0-9_-]+", "_", alias).strip("_") or pa_name
+            if pa_name in masters:
+                if pa_name not in self.bt_noted:
+                    self.bt_noted.add(pa_name)
+                    log.info("Bluetooth sink %s ('%s') has a remap sink on top of it; "
+                             "that remap sink is its zone", pa_name, alias)
+                continue
+            if key in remap or key in keys:
+                log.warning("Bluetooth sink %s: zone name '%s' is already taken, skipping",
+                            pa_name, key)
+                continue
+            self.bt_defs[key] = (pa_name, alias)
+            keys.append(key)
+        return remap + keys
 
     def reconcile(self):
         names = list_remap_sinks()

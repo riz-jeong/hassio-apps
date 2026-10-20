@@ -44,9 +44,9 @@ Set `log_level` in the add-on configuration to `v` (brief), `vv` (normal, defaul
 
 ## Setting up a new zone
 
-**Sink-backed zones (local sound cards, USB DACs, HDMI, Bluetooth speakers, etc.):** this addon only creates an AirPlay 2 zone for a PulseAudio sink that's a `module-remap-sink` — and it names the zone after that remap sink's own name, so the remap sink's name *is* what shows up in your AirPlay picker. A raw hardware sink on its own (even a plain stereo card with nothing multi-channel about it) won't be picked up until it has a remap sink built on top of it — this applies even when the remap sink would just be a 1:1, all-channels passthrough of the card. A Bluetooth speaker works the same way once it's paired and PulseAudio shows it as a sink; see **Using a Bluetooth speaker as a zone** under **Advanced**.
+**Sink-backed zones (local sound cards, USB DACs, HDMI, Bluetooth speakers, etc.):** remap sinks become AirPlay 2 zones and use the remap sink's own name in the picker. Other raw hardware sinks require a remap sink first, even for a 1:1 channel passthrough. Connected Bluetooth A2DP sinks are the exception: they can become zones directly without a remap sink. See **Using a Bluetooth speaker as a zone** under **Advanced**.
 
-The recommended way to create these remap sinks is with the **Multi-room Audio Controller** addon, rather than creating them by hand with `pactl`. The add-on monitors PulseAudio sink changes and adds, removes, or restarts the matching AirPlay 2 zone automatically. Stable intentionally creates zones for remap sinks only; Beta also supports standalone Bluetooth audio sinks.
+The recommended way to create these remap sinks is with the **Multi-room Audio Controller** addon, rather than creating them by hand with `pactl`. This add-on monitors PulseAudio sink changes and adds, removes, or restarts the matching AirPlay 2 zone automatically. Connected standalone Bluetooth A2DP sinks also get their own zone; when a remap sink sits on a Bluetooth sink, the remap sink remains the zone.
 
 **Cast-backed zones (Google/Nest speakers, Cast groups, Cast-enabled soundbars):** nothing to configure — every Cast device found on the network gets its own AirPlay 2 zone automatically, unless it's already got a native AirPlay 2 receiver of its own (see above).
 
@@ -58,7 +58,7 @@ Restart this addon whenever you:
 
 A restart re-scans the network and regenerates Cast receivers. PulseAudio-backed zones are monitored while the add-on runs. Zone names and their AirPlay 2 ports are persisted, so a zone's identity in your AirPlay picker stays stable across restarts.
 
-If PulseAudio restarts or the configured remap sink disappears, the zone manager stops the affected Shairport Sync process and starts it again when PulseAudio and the exact sink are available. It does not switch the zone to another output sink. If the physical DAC or HDMI output remains silent while PulseAudio reports its sink as present, inspect the PulseAudio and Shairport Sync logs; restarting the add-on can reinitialize a hardware sink that PulseAudio has left stuck.
+If PulseAudio restarts or a configured sink disappears, the zone manager stops the affected Shairport Sync process and starts it again when PulseAudio and the exact sink are available. It does not switch the zone to another output sink. If the physical DAC or HDMI output remains silent while PulseAudio reports its sink as present, inspect the PulseAudio and Shairport Sync logs; restarting the add-on can reinitialize a hardware sink that PulseAudio has left stuck.
 
 ## Troubleshooting
 
@@ -117,12 +117,12 @@ The value is in seconds, and a negative value makes the zone play earlier. Becau
 
 ### Using a Bluetooth speaker as a zone
 
-A Bluetooth speaker can be an AirPlay 2 zone like any other output, as long as PulseAudio sees it as a sink and a remap sink has been built on top of it.
+A Bluetooth speaker can be an AirPlay 2 zone like any other output. PulseAudio can expose it directly as a sink, so a remap sink is optional.
 
 1. **Pair and connect the speaker on the host** with `bluetoothctl` (`pair`, `trust`, `connect`). `trust` lets the speaker reconnect on its own after a reboot or power cycle. Pairing keys are stored by BlueZ and survive reboots. See **Pairing walkthrough** below for the full steps.
 2. **Confirm PulseAudio created a sink for it.** `pactl list sinks short | grep bluez` should show something like `bluez_output.AA_BB_CC_DD_EE_FF.1` (PipeWire-pulse) or `bluez_sink.AA_BB_CC_DD_EE_FF.a2dp_sink` (PulseAudio). If the speaker connects but no sink appears, check that its card is on the `a2dp-sink` profile (`pactl list cards short`, then `pactl set-card-profile <card> a2dp-sink`).
-3. **Create a remap sink on top of the Bluetooth sink** in the **Multi-room Audio Controller** addon, exactly as you would for a sound card (see **Setting up a new zone**).
-4. **Restart this addon** with the speaker connected. The zone is built from the remap sink, so it's only generated if the Bluetooth sink and its remap sink exist at that moment.
+3. (Optional) **Create a remap sink on top of the Bluetooth sink** in the **Multi-room Audio Controller** addon if you need channel mapping or a stable custom zone name. The remap sink becomes the AirPlay zone; the manager avoids creating a duplicate zone for the underlying Bluetooth sink.
+4. **Connect the speaker.** The manager discovers standalone A2DP sinks and adds or removes their AirPlay zones as the sinks appear and disappear. Restart this add-on only if you change its configuration.
 
 #### Pairing walkthrough
 
@@ -186,7 +186,7 @@ You want `Paired: yes`, `Trusted: yes`, `Connected: yes`, and a `bluez_output...
 
 For more detail on `bluetoothctl` and BlueZ, the Arch Linux wiki's Bluetooth page (https://wiki.archlinux.org/title/Bluetooth) is a good general reference, and `man bluetoothctl` lists every command.
 
-**What happens when the speaker disconnects:** many speakers drop the link after a few minutes of silence, or when powered off or out of range. The Bluetooth sink disappears, and the remap sink built on it goes with it. When the speaker reconnects, the Bluetooth sink returns but the remap sink is not recreated automatically, and the zone's receiver is left pointing at a sink that no longer exists. Reconnect the speaker, make sure its remap sink is back, and restart this addon.
+**What happens when the speaker disconnects:** many speakers drop the link after a few minutes of silence, or when powered off or out of range. PulseAudio removes the Bluetooth sink and its AirPlay zone; when the speaker reconnects, the manager discovers the new sink and recreates the zone. If a user-created remap sink does not return with it, recreate that remap sink through the Multi-room Audio Controller.
 
 **Latency and sync:** Bluetooth (A2DP) adds roughly 100–250 ms of delay that AirPlay 2 doesn't know about, so a Bluetooth zone plays late relative to the other rooms when grouped. Compensate for it with a negative latency offset in the zone's custom configuration (see **Custom `general` configuration per zone**, above). The delay depends on the codec (SBC vs AAC, for example) and can differ slightly between connections, so re-tune if the speaker changes codec or you notice drift after a reconnect.
 
@@ -211,3 +211,13 @@ For these zones, set the players to **AirPlay 2 - compatibility mode**, or use *
 **3. Play to one zone or several.** Select a single player in MA to play to one zone, or group several players and play to the group to hear them together. You can also group the zones from an iPhone, iPad, or Mac with AirPlay 2's own multi-room selection, as described at the top of this README.
 
 MA remembers each player's settings, including the streaming mode. Because this addon keeps each zone's name and AirPlay 2 port stable across restarts (see **Restarting**), the zone comes back as the same player and keeps its settings. If you rename a zone, MA treats it as a new player and its streaming mode returns to **Automatic**, so set it again.
+
+
+## Migrating from the former Beta add-on
+
+The separate Beta add-on has been consolidated into this add-on. Stable users update in place. If you used Beta, Home Assistant does not automatically move options or files between add-on slugs:
+
+1. Record the values in the Beta configuration UI, then stop the Beta add-on.
+2. Back up `addon_configs/airplay_2_multiroom_audio_beta/`. Copy any custom Shairport zone files and `shairport-sync/config/port_map.txt` into the matching locations under `addon_configs/airplay_2_multiroom_audio/`. If you want to preserve Cast HTTP port assignments, also copy `cast-bridge/http_port_map.txt`. Do not overwrite existing Stable files without reviewing them.
+3. Install or update **Airplay2 Multiroom Audio** (slug `airplay_2_multiroom_audio`) and re-enter the recorded options in its configuration UI.
+4. Start the consolidated add-on and confirm the expected sink, Bluetooth, and Cast receivers appear and play correctly. Keep the Beta backup until this is verified, then uninstall the obsolete Beta add-on.

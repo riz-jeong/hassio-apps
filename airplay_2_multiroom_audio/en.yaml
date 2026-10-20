@@ -22,6 +22,12 @@ configuration:
       to 0.35 seconds. Output uses the connected sink's current sample rate,
       falling back to automatic rate selection if PulseAudio cannot report it.
       Existing per-zone custom settings take precedence. Default: 3 seconds.
+  log_level:
+    name: Shairport Sync log level
+    description: >-
+      Verbosity for sink-backed and Cast-backed Shairport Sync receivers. v is
+      brief, vv is normal detail, and vvv is most detailed and grows logs
+      fastest. Restart the add-on after changing it. Default: vv.
 
   airplay_lossless_mode:
     name: AirPlay lossless audio
@@ -30,8 +36,3 @@ configuration:
       avoid audible glitches some senders can produce while changing between
       lossy and lossless streams. Restart the add-on after changing this option.
       Default: on.
-  log_level:
-    name: Shairport Sync log level
-    description: >-
-      Select v for brief logs, vv for normal detail, or vvv for detailed
-      diagnostics. Applies to sink-backed and Cast-backed receivers. Default: vv.

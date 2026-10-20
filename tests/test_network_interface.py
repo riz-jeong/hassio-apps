@@ -171,13 +171,8 @@ class NetworkInterfaceTests(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("default route", result.stderr)
 
-    def test_addon_resolvers_remain_identical(self):
-        stable = (ROOT / "airplay_2_multiroom_audio" / "network_interface.py").read_bytes()
-        beta = (ROOT / "airplay_2_multiroom_audio_beta" / "network_interface.py").read_bytes()
-        self.assertEqual(stable, beta)
-
-    def test_beta_sink_manager_generates_config_with_selected_interface(self):
-        manager_path = ROOT / "airplay_2_multiroom_audio_beta" / "sink_zone_manager.py"
+    def test_sink_manager_generates_config_with_selected_interface(self):
+        manager_path = ROOT / "airplay_2_multiroom_audio" / "sink_zone_manager.py"
         manager_dir = str(manager_path.parent)
         old_value = os.environ.get("AIRPLAY_INTERFACE")
         os.environ["AIRPLAY_INTERFACE"] = "eth1"
@@ -205,8 +200,8 @@ class NetworkInterfaceTests(unittest.TestCase):
         self.assertIn("@include", generated)
         self.assertEqual(1, generated.count("interface ="))
 
-    def test_beta_sink_manager_uses_configured_airplay_name(self):
-        addon = ROOT / "airplay_2_multiroom_audio_beta"
+    def test_sink_manager_uses_configured_airplay_name(self):
+        addon = ROOT / "airplay_2_multiroom_audio"
         sys.path.insert(0, str(addon))
         try:
             spec = importlib.util.spec_from_file_location("sink_zone_manager_name_test", addon / "sink_zone_manager.py")
@@ -246,8 +241,8 @@ class NetworkInterfaceTests(unittest.TestCase):
         self.assertIn('name = "JCH Hi-Fi";', generated)
         self.assertIn('sink = "sink_usb";', generated)
 
-    def test_beta_sink_manager_rejects_interface_override_in_custom_config(self):
-        manager_path = ROOT / "airplay_2_multiroom_audio_beta" / "sink_zone_manager.py"
+    def test_sink_manager_rejects_interface_override_in_custom_config(self):
+        manager_path = ROOT / "airplay_2_multiroom_audio" / "sink_zone_manager.py"
         manager_dir = str(manager_path.parent)
         old_value = os.environ.get("AIRPLAY_INTERFACE")
         os.environ["AIRPLAY_INTERFACE"] = "eth1"
@@ -273,7 +268,7 @@ class NetworkInterfaceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "conflicts with airplay_name"):
                 zone._write_config()
 
-    def test_stable_sink_config_template_generates_one_selected_interface(self):
+    def test_sink_manager_config_template_generates_one_selected_interface(self):
         manager_path = ROOT / "airplay_2_multiroom_audio" / "sink_zone_manager.py"
         manager_dir = str(manager_path.parent)
         old_value = os.environ.get("AIRPLAY_INTERFACE")
@@ -313,7 +308,7 @@ class NetworkInterfaceTests(unittest.TestCase):
         self.assertIn("@include", generated)
         self.assertEqual(1, generated.count("interface ="))
 
-    def test_stable_sink_run_script_passes_the_configured_name_to_shairport(self):
+    def test_sink_run_script_passes_the_configured_name_to_shairport(self):
         addon = ROOT / "airplay_2_multiroom_audio"
         sys.path.insert(0, str(addon))
         try:
@@ -350,7 +345,7 @@ class NetworkInterfaceTests(unittest.TestCase):
         self.assertEqual("JCH Hi-Fi", started[0][started[0].index("-a") + 1])
 
     def test_avahi_template_writes_one_selected_interface(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon):
                 generator = (ROOT / addon / "generate_airplay2_services.sh").read_text()
                 marker = 'awk -v iface="${AIRPLAY_INTERFACE}" '
@@ -369,7 +364,7 @@ class NetworkInterfaceTests(unittest.TestCase):
                 self.assertNotIn("old0", generated)
 
     def test_cast_managers_generate_config_with_the_resolved_interface(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon), tempfile.TemporaryDirectory() as temp_dir:
                 fake_pychromecast = types.ModuleType("pychromecast")
                 fake_zeroconf = types.ModuleType("zeroconf")
@@ -434,46 +429,32 @@ class NetworkInterfaceTests(unittest.TestCase):
                 self.assertEqual(1, generated.count("interface ="))
 
     def test_every_runtime_path_uses_the_resolved_value(self):
-        stable_dir = ROOT / "airplay_2_multiroom_audio"
-        beta_dir = ROOT / "airplay_2_multiroom_audio_beta"
-        stable_generator = (stable_dir / "generate_airplay2_services.sh").read_text()
-        beta_generator = (beta_dir / "generate_airplay2_services.sh").read_text()
-        self.assertIn('interface = "{AIRPLAY_INTERFACE}";',
-                      (stable_dir / "sink_zone_manager.py").read_text())
-        self.assertIn('interface = "{AIRPLAY_INTERFACE}";',
-                      (stable_dir / "cast_bridge_manager.py").read_text())
-        self.assertIn('interface = "{AIRPLAY_INTERFACE}";',
-                      (beta_dir / "cast_bridge_manager.py").read_text())
-        self.assertIn('interface = "{AIRPLAY_INTERFACE}";',
-                      (beta_dir / "sink_zone_manager.py").read_text())
-        self.assertIn('interface = "{AIRPLAY_INTERFACE}";',
-                      (stable_dir / "sink_zone_manager.py").read_text())
-        for generator in (stable_generator, beta_generator):
-            self.assertIn('awk -v iface="${AIRPLAY_INTERFACE}"', generator)
-            self.assertIn('network_interface.py', generator)
-            self.assertNotIn("AIRPLAY_INTERFACE:-", generator)
-        self.assertIn('re.search(r"(?m)^\\s*interface\\s*=", custom_config)',
-                      (stable_dir / "sink_zone_manager.py").read_text())
-        self.assertIn("export AIRPLAY_INTERFACE=", stable_generator)
-        self.assertIn("sink_zone_manager.py", stable_generator)
-        self.assertIn("export AIRPLAY_INTERFACE=", beta_generator)
-        for addon in (stable_dir, beta_dir):
-            config = (addon / "config.yaml").read_text()
-            dockerfile = (addon / "Dockerfile").read_text()
-            self.assertIn("airplay_interface: auto", config)
-            self.assertIn("airplay_interface: str", config)
-            self.assertIn("iproute2", dockerfile)
-            self.assertIn("COPY network_interface.py", dockerfile)
-            self.assertIn("COPY airplay_name.py", dockerfile)
-            self.assertIn("airplay_name: auto", config)
-            self.assertIn("airplay_name: str", config)
-        self.assertIn("COPY airplay_name.py", (beta_dir / "Dockerfile.txt").read_text())
-        for manager in (stable_dir / "cast_bridge_manager.py", beta_dir / "cast_bridge_manager.py",
-                        stable_dir / "sink_zone_manager.py", beta_dir / "sink_zone_manager.py"):
-            self.assertIn('os.environ.get("AIRPLAY_INTERFACE", "")', manager.read_text())
+        addon = ROOT / "airplay_2_multiroom_audio"
+        generator = (addon / "generate_airplay2_services.sh").read_text()
+        sink_manager = (addon / "sink_zone_manager.py").read_text()
+        cast_manager = (addon / "cast_bridge_manager.py").read_text()
+        self.assertIn('interface = "{AIRPLAY_INTERFACE}";', sink_manager)
+        self.assertIn('interface = "{AIRPLAY_INTERFACE}";', cast_manager)
+        self.assertIn('awk -v iface="${AIRPLAY_INTERFACE}"', generator)
+        self.assertIn("network_interface.py", generator)
+        self.assertNotIn("AIRPLAY_INTERFACE:-", generator)
+        self.assertIn('re.search(r"(?m)^\s*interface\s*=", custom_config)', sink_manager)
+        self.assertIn("export AIRPLAY_INTERFACE=", generator)
+        self.assertIn("sink_zone_manager.py", generator)
+        config = (addon / "config.yaml").read_text()
+        dockerfile = (addon / "Dockerfile").read_text()
+        self.assertIn("airplay_interface: auto", config)
+        self.assertIn("airplay_interface: str", config)
+        self.assertIn("iproute2", dockerfile)
+        self.assertIn("COPY network_interface.py", dockerfile)
+        self.assertIn("COPY airplay_name.py", dockerfile)
+        self.assertIn("airplay_name: auto", config)
+        self.assertIn("airplay_name: str", config)
+        self.assertIn('os.environ.get("AIRPLAY_INTERFACE", "")', sink_manager)
+        self.assertIn('os.environ.get("AIRPLAY_INTERFACE", "")', cast_manager)
 
-    def test_both_addons_expose_an_automatic_airplay_name_option(self):
-        for addon in ("airplay_2_multiroom_audio", "airplay_2_multiroom_audio_beta"):
+    def test_addon_exposes_an_automatic_airplay_name_option(self):
+        for addon in ("airplay_2_multiroom_audio",):
             with self.subTest(addon=addon):
                 config = (ROOT / addon / "config.yaml").read_text()
                 translations = (ROOT / addon / "en.yaml").read_text()
@@ -481,22 +462,15 @@ class NetworkInterfaceTests(unittest.TestCase):
                 self.assertIn("  airplay_name:", translations)
 
     def test_interface_dependent_services_are_refreshed_on_restart(self):
-        stable = (ROOT / "airplay_2_multiroom_audio/generate_airplay2_services.sh").read_text()
-        beta = (ROOT / "airplay_2_multiroom_audio_beta/generate_airplay2_services.sh").read_text()
-        self.assertNotIn('if [ -d "$service_dir" ]; then', stable)
-        for generator in (stable, beta):
-            avahi = generator.split('AVAHI_SERVICE="${BASE_DIR}/airplay2-avahi"', 1)[1]
-            avahi_setup, _ = avahi.split('NQPTP_SERVICE=', 1)
-            self.assertIn('fi\ncat > "${AVAHI_SERVICE}/run"', avahi_setup)
-            cast = generator.split('CASTBRIDGE_MANAGER_SERVICE="${BASE_DIR}/airplay2-castbridge-manager"', 1)[1]
-            cast_setup = cast.split('# One manager for every PulseAudio-sink zone', 1)[0] \
-                if '# One manager for every PulseAudio-sink zone' in cast else cast
-            self.assertIn('fi\ncat > "${CASTBRIDGE_MANAGER_SERVICE}/run"', cast_setup)
-        beta_sink = beta.split('SINK_ZONE_MANAGER_SERVICE="${BASE_DIR}/airplay2-sink-zone-manager"', 1)[1]
-        self.assertRegex(beta_sink, r'fi\n(?:#.*\n)?cat > "\$\{SINK_ZONE_MANAGER_SERVICE\}/run"')
-        stable_sink = stable.split('SINK_ZONE_MANAGER_SERVICE="${BASE_DIR}/airplay2-sink-zone-manager"', 1)[1]
-        self.assertRegex(stable_sink, r'fi\ncat > "\$\{SINK_ZONE_MANAGER_SERVICE\}/run"')
-
+        generator = (ROOT / "airplay_2_multiroom_audio/generate_airplay2_services.sh").read_text()
+        self.assertNotIn('if [ -d "$service_dir" ]; then', generator)
+        avahi = generator.split('AVAHI_SERVICE="${BASE_DIR}/airplay2-avahi"', 1)[1]
+        avahi_setup, _ = avahi.split('NQPTP_SERVICE=', 1)
+        self.assertIn('fi\ncat > "${AVAHI_SERVICE}/run"', avahi_setup)
+        cast = generator.split('CASTBRIDGE_MANAGER_SERVICE="${BASE_DIR}/airplay2-castbridge-manager"', 1)[1]
+        self.assertIn('fi\ncat > "${CASTBRIDGE_MANAGER_SERVICE}/run"', cast)
+        sink = generator.split('SINK_ZONE_MANAGER_SERVICE="${BASE_DIR}/airplay2-sink-zone-manager"', 1)[1]
+        self.assertRegex(sink, r'fi\n(?:#.*\n)?cat > "\$\{SINK_ZONE_MANAGER_SERVICE\}/run"')
 
 if __name__ == "__main__":
     unittest.main()
